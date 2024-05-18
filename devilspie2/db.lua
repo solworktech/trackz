@@ -18,10 +18,7 @@ function insert_to_db(process_name, app_name, window_name, focus_start_time)
     if last_event_id then
 	local time = os.time(os.date("!*t"))
 	-- local time = os.date("%Y-%m-%d %I:%M:%S")
-	-- print (time)
         local stmt = db:prepare[[ UPDATE trackz set focus_end_time = ? where id = ?]]
-	-- print ('UPDATE trackz set focus_end_time = ' .. time .. ' where id =' .. tonumber(last_event_id))
-	-- stmt:bind_values(os.date(), last_event_id)
 	stmt:bind_values(time, last_event_id)
 	stmt:step()
 	stmt:finalize()
@@ -31,7 +28,6 @@ function insert_to_db(process_name, app_name, window_name, focus_start_time)
 
     local time = os.time(os.date("!*t"))
     stmt:bind_names{id = nil,  process_name = process_name,  app_name = app_name, window_name = window_name, focus_start_time = time }
-    -- stmt:bind_names{id = nil,  process_name = process_name,  app_name = app_name, window_name = window_name, focus_start_time = os.time(os.date("!*t")) }
     stmt:step()
     stmt:finalize()
     last_event_id_handle = io.open(last_event_id_file,"w")

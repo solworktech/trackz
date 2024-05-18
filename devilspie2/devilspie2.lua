@@ -1,6 +1,6 @@
 scripts_window_focus = {
-    "test.lua"
+    "focus_hook.lua"
 }
 scripts_window_title_change = {
-    "test1.lua"
+    "window_name_hook.lua"
 }
