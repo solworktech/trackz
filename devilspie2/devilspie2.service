@@ -1,0 +1,22 @@
+[Unit]
+Description=Devilspie2 daemon - X server window event hook system
+Documentation=https://github.com/jessp01/devilspie2
+PartOf=graphical-session.target
+
+[Service]
+Restart=on-failure
+User=devilspie
+EnvironmentFile=/etc/default/devilspie2
+WorkingDirectory=/etc/devilspie2
+StandardOutput=append:/var/log/devilspie2.log
+StandardError=append:/var/log/devilspie2.log
+SyslogIdentifier=devilspie2
+ExecStart=/usr/local/bin/devilspie2 $ARGS
+ExecStartPre=rm -f ${XDG_RUNTIME_DIR}/trackz_last_event_id
+ExecStop=rm -f ${XDG_RUNTIME_DIR}/trackz_last_event_id
+ExecReload=/bin/kill -HUP $MAINPID
+TimeoutStopSec=20s
+
+
+[Install]
+WantedBy=multi-user.target

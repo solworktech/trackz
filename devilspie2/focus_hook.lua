@@ -5,6 +5,6 @@ local window_name = get_window_name()
 
 if process_name ~= nil and process_name ~= '' then
     insert_to_db(process_name, app_name, window_name, focus_start_time)
-    debug_print(os.date("%d/%m/%Y %I:%M %p") .. " -- focus hook:: Process name: " .. process_name)
+    debug_print(os.date("%d/%m/%Y %I:%M:%S%p") .. " -- focus hook:: Process name: " .. process_name)
 end
 
