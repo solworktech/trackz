@@ -1,6 +1,6 @@
 require "db"
 local process_name = get_process_name()
-local application_name = get_application_name()
+local app_name = get_application_name()
 local window_name = get_window_name()
 
 if process_name ~= nil and process_name ~= '' then
