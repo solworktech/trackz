@@ -11,7 +11,7 @@ if not last_event_id_handle then
 end
 last_event_id_handle:close()
 local sqlite3 = require("lsqlite3")
-function insert_to_db(process_name, app_name, window_name, focus_start_time)
+function insert_to_db(process_name, app_name, window_name, process_owner, focus_start_time)
     local db = sqlite3.open(db_path, sqlite3.OPEN_READWRITE)
     local last_event_record = nil
 
@@ -20,14 +20,14 @@ function insert_to_db(process_name, app_name, window_name, focus_start_time)
     last_event_id_handle:close()
     if last_event_id then
 	-- local time = os.date("%Y-%m-%d %I:%M:%S")
-	local stmt = db:prepare("SELECT process_name, window_name FROM trackz WHERE id = ?")
+	local stmt = db:prepare("SELECT process_name, window_name, process_owner FROM trackz WHERE id = ?")
 	stmt:bind_values(last_event_id)
 	res = stmt:step()
 	if res == sqlite3.ROW then
 	    last_event_record = stmt:get_named_values()
 	end
 	stmt:finalize()
-	if (last_event_record ~= nil and last_event_record ~= '') and (last_event_record.window_name ~= window_name or last_event_record.process_name ~= process_name) then 
+	if (last_event_record ~= nil and last_event_record ~= '') and (last_event_record.window_name ~= window_name or last_event_record.process_name ~= process_name or last_event_record.process_owner ~= process_owner) then 
 	    debug_print(os.date("%d/%m/%Y %I:%M:%S%p") .. " title hook:: update Window " .. window_name);
 	    local time = os.time(os.date("!*t"))
 	    local stmt = db:prepare[[ UPDATE trackz set focus_end_time = ? where id = ?]]
@@ -37,11 +37,11 @@ function insert_to_db(process_name, app_name, window_name, focus_start_time)
 	end
     end
 
-    if last_event_record == nil or (last_event_record.window_name ~= window_name or last_event_record.process_name ~= process_name) then 
-	    debug_print(os.date("%d/%m/%Y %I:%M:%S%p") .. " title hook:: insert Window Name: " .. window_name);
+    if last_event_record == nil or (last_event_record.window_name ~= window_name or last_event_record.process_name ~= process_name or last_event_record.process_owner ~= process_owner) then 
+	    debug_print(os.date("%d/%m/%Y %I:%M:%S%p") .. " title hook:: insert Window Name: " .. window_name .. " OWNER: " .. process_owner);
 	    local time = os.time(os.date("!*t"))
-	    local stmt = db:prepare[[ INSERT INTO trackz VALUES (:id, :process_name, :app_name, :window_name, :focus_start_time, :focus_end_time) ]]
-	    stmt:bind_names{id = nil,  process_name = process_name,  app_name = app_name, window_name = window_name, focus_start_time = time }
+	    local stmt = db:prepare[[ INSERT INTO trackz VALUES (:id, :process_name, :app_name, :window_name, :focus_start_time, :focus_end_time, :process_owner) ]]
+	    stmt:bind_names{id = nil,  process_name = process_name,  app_name = app_name, window_name = window_name, focus_start_time = time, process_owner = process_owner}
 	    stmt:step()
 	    stmt:finalize()
 	    last_event_id_handle = io.open(last_event_id_file,"w")

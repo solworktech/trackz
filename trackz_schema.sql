@@ -5,5 +5,6 @@ CREATE TABLE trackz
     app_name VARCHAR(256) NOT NULL,
     window_name VARCHAR(256) NOT NULL,
     focus_start_time INTEGER NOT NULL,
-    focus_end_time INTEGER
+    focus_end_time INTEGER,
+    process_owner varchar(128)
 );
