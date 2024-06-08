@@ -52,3 +52,13 @@ if you've got something "special" going, issue the relevant `chomd` commands):
 See the [config section](https://github.com/jessp01/devilspie2/?tab=readme-ov-file#config) for a general explanation of
 how `Devilspie2` works.
 The default hooks directory is `~/.config/devilspie2`. 
+If you're the only user whose activity you wish to record, that's a good choice. If you wish to record the activity of
+multiple users, I'd suggest `/etc/devilspie2` (remember to launch `devilspie2` with `-f /path/to/hooks dir` if you use
+anything but the default).
+
+
+Copy the following files under the `devilspie2` dir to your hooks dir:
+- `db.lua`: common code to handle DB insertion and update statements for both hooks 
+- `devilspie2.lua`: hook config file 
+- `focus_hook.lua`: triggered when an X window gets focus
+- `window_name_hook.lua`: triggered when the window title changes
