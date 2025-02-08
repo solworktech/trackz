@@ -1,26 +1,32 @@
 # Trackz
 Monitor time spent in X apps/windows
 
-## What does it actually mean?
-Trackz makes use of [devilspie2](https://github.com/jessp01/devilspie2/tree/get-process-owner) to set up hooks for window focus and window name/title changes.
-
-**Note: the above GIT repo is a fork of the original [devilspie2](https://www.nongnu.org/devilspie2/). 
-The code in the `get-process-owner` branch of this fork is needed to support logging the process owner (pull submitted
-upstream [here](https://github.com/dsalt/devilspie2/pull/39))** 
-
-These events are then inserted into an SQLite3 DB, allowing you to query it for time spent in a given app/tab/window. Of
-course, the data can then also be visualised or exported to CSV, etc.
-
 ## Intended use
+
 - Keeping track of how one's time is spent (working on project X, playing game Y, etc)
 - Filing billing reports (for contractors, professional services, etc)
 
 **This is not Intended as a tool for companies to spy on their employees. Whilst I cannot prevent that sort of usage, if
 you have that in mind, know that I do not like you. To put it mildly.**
 
+## How does it work?
+Trackz makes use of [devilspie 2](https://github.com/jessp01/devilspie2/tree/get-process-owner) to set up hooks 
+for window focus and window name/title changes.
+
+These events are then inserted into an SQLite3 DB, allowing you to query it for time spent in a given app/tab/window. Of
+course, the data can then also be visualised or exported to CSV, etc.
+
+**Note: the above GIT repo is a fork of the original [devilspie2](https://www.nongnu.org/devilspie2/). 
+The code in the `get-process-owner` branch of this fork is needed to support logging the process owner (pull submitted
+upstream [here](https://github.com/dsalt/devilspie2/pull/39))** 
+
+**Note II: Trackz was tested predominantly on Debian GNU/Linux but should work on any system where Devilspie 2 and
+SQLite3 can run.**
+
 ## Installation and setup
 
 ### `Devilspie2`
+
 This is a straightforward `make && make install` sort of deployment; there are a few dependencies (as is usually the
 case). See [installation instructions](https://github.com/jessp01/devilspie2/blob/implement-get-process-owner/INSTALL#L9) for details.
 
@@ -42,7 +48,7 @@ $ sqlite3 /path/to/trackz.db < trackz_schema.sql
 ```
 The dir where `trackz.db` resides needs to be owned by the user who will be doing the writing and that user will of
 course need write permissions on `trackz.db`. To better illustrate, if the DB resides in `/etc/trackz/trackz.db` and the
-user `devilspie2` will run under is `devilspie` then the below should be enough (assuming you use a reasonable `umask`,
+user `devilspie2` executable will run as is `devilspie` then the below should be enough (assuming you use a reasonable `umask`,
 if you've got something "special" going, issue the relevant `chomd` commands):
 ```sh
 # chown devilspie /etc/trackz /etc/trackz/trackz.db
@@ -63,7 +69,7 @@ Copy the following files under the `devilspie2` dir to your hooks dir:
 - `focus_hook.lua`: triggered when an X window gets focus
 - `window_name_hook.lua`: triggered when the window title changes
 
-### ENV vars
+### Setting the ENV vars
 
 - `TRACKZ_DB`: points to the location of the SQLite3 DB
 - `XDG_RUNTIME_DIR`: this is typically set to `/run/user/$UID`, it is used to store the last event ID (trackz.id)
@@ -71,7 +77,8 @@ Copy the following files under the `devilspie2` dir to your hooks dir:
 
 ### Testing
 
-At this point, invoking `devilspie2 -f /etc/devilspie2 --debug` from your shell and switching between windows, should result in outputs similar to this:
+After setting up the DB, hooks and ENV vars as per the above, invoking `devilspie2 -f /etc/devilspie2 --debug` from 
+your shell and switching between windows, should result in outputs similar to this:
 ```
 08/02/2025 05:53:56pm title hook::insert window 'Go Report Card | Go project code quality report cards — Mozilla Firefox (firefox-esr)' Owner: 'jesse'
 08/02/2025 05:53:57pm title hook::insert window 'Debugging HTTP Client requests with Go · Jamie Tanna | Software Engineer — Mozilla Firefox (firefox-esr)' Owner: 'jesse'
@@ -79,11 +86,19 @@ At this point, invoking `devilspie2 -f /etc/devilspie2 --debug` from your shell 
 08/02/2025 05:54:04pm title hook::update window 'devilspie2 (lxterminal) ' Owner: 'jesse'
 ```
 
-### Running as a service
+If all went well and the output includes no errors, you can use the `sqlite3` CLI client to make sure the data is being
+populated into the DB:
 
-### Useful queries
+```
+$ sqlite3 /etc/trackz/trackz.db
+sqlite> .mode box --wrap 40 -- makes the output easier to read, IMHO
+sqlite> SELECT id, process_name, window_name,
+time(focus_end_time - focus_start_time,'unixepoch') as duration from trackz;
+```
 
-The [schema file] includes annotations per field, take a look to better understand it.
+### Data schema and notes
+
+The [schema file](./trackz_schema.sql) includes annotations per field, take a look to better understand it.
 
 Records in `trackz` have a `focus_start_time` column and a `focus_end_time`. These values are stored as UNIX epoch
 timestamps. 
@@ -91,12 +106,13 @@ timestamps.
 Note that `focus_start_time` is specific to a record/event; it's when the window received focus, not necessarily when the
 process was launched. Each process will likely result in multiple records, as you toggle between windows (and tabs).
 
+#### Useful queries
 For all events, output the event ID (auto incremented), process name, window name and the time it spent in focus
 (formatted as %H:%M:%S, i.e. 00:01:42):
 
 ```sql
 SELECT id, process_name, window_name, 
-time(focus_end_time - focus_start_time,'unixepoch') AS duration from trackz;
+time(focus_end_time - focus_start_time,'unixepoch') as duration from trackz;
 ```
 
 Sample output:
@@ -182,3 +198,60 @@ Sample output:
 └──────────────┴────────────────────────────────┴────────────────┴───────────────┴────────────┘
 
 ```
+
+### Running Trackz automatically on system init/session init
+
+`devilspie2` needs to run as a user that has access to the X display.
+If you're the only user likely to start X sessions on the machine, simply edit 
+[devilspie2/devilspie2.service](./devilspie2/devilspie2.service) and set the `User` directive to your own user.
+If you sometimes initiate sessions for other users by invoking `su -` from your X terminal emulator and then 
+launch X apps from that TTY, it will work and `trackz.process_owner` will be set to the correct user. 
+
+See [devilspie2/devilspie2.service](./devilspie2/devilspie2.service) and
+[devilspie2/devilspie2.env](./devilspie2/devilspie2.env). The location of `devilspie2.service` may vary depending on
+your distro of choice but will likely be `/usr/lib/systemd/system/devilspie2.service`. Check your distro's documentation if you're unsure.
+
+Start the service with:
+
+```sh
+# systemctl start devilspie2
+```
+
+If you want it to automatically launch at system init:
+
+```sh
+systemctl enable devilspie2
+```
+
+### Note on running the service as a user that does not initiate an X session
+
+You can use the below shell script (the examples all assume you place it under 
+`/usr/local/bin/xauth_setup.sh`) but I should note that it's somewhat hackish:
+
+```sh
+#!/bin/sh -e
+NORMAL_X_USER=@YOUR_USER_HERE@
+DEVILSPIE_USER=devilspie # you can change to any user you wish, so long as it's a valid one
+DISPLAY=:0.0 # change as needed 
+X_AUTH_LIST=$(su - $NORMAL_X_USER -c 'xauth list|grep "`uname -n`/unix:0"')
+X_MAGIC_COOKIE=$(echo $X_AUTH_LIST|awk -F " " '{print $NF}')
+su - $DEVILSPIE_USER -c "xauth add $DISPLAY .  $X_MAGIC_COOKIE"
+```
+
+You will also need this little C wrapper:
+```c
+#include <stdlib.h>
+#include <unistd.h>
+
+int main()
+{
+    setuid(0);
+    int rc = system("/usr/local/bin/xauth_setup.sh");
+    return rc;
+}
+```
+
+Compile the wrapper with `$CC /usr/local/bin/xauth_setup.c -o /usr/local/bin/xauth_setup` (where `$CC` is set to whatever
+C compiler you use - gcc, clang, etc)
+
+Finally, comment out the existing `ExecStartPre` directive in [devilspie2/devilspie2.service](./devilspie2/devilspie2.service) and replace it with `ExecStartPre=/usr/local/bin/xauth_setup && rm -f ${XDG_RUNTIME_DIR}/trackz_last_event_id`
