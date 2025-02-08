@@ -3,9 +3,10 @@ Monitor time spent in X apps/windows
 
 ## What does it actually mean?
 Trackz makes use of [devilspie2](https://github.com/jessp01/devilspie2/tree/get-process-owner) to set up hooks for window focus and window name/title changes.
+
 **Note: the above GIT repo is a fork of the original [devilspie2](https://www.nongnu.org/devilspie2/). 
 The code in the `get-process-owner` branch of this fork is needed to support logging the process owner (pull submitted
-upstream [here](https://github.com/dsalt/devilspie2/pull/39)) 
+upstream [here](https://github.com/dsalt/devilspie2/pull/39))** 
 
 These events are then inserted into an SQLite3 DB, allowing you to query it for time spent in a given app/tab/window. Of
 course, the data can then also be visualised or exported to CSV, etc.
