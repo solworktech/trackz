@@ -12,6 +12,7 @@ StandardOutput=append:/var/log/devilspie2.log
 StandardError=append:/var/log/devilspie2.log
 SyslogIdentifier=devilspie2
 ExecStart=/usr/local/bin/devilspie2 $ARGS
+#ExecStartPre=/usr/local/bin/xauth_setup && rm -f ${XDG_RUNTIME_DIR}/trackz_last_event_id
 ExecStartPre=rm -f ${XDG_RUNTIME_DIR}/trackz_last_event_id
 ExecStop=rm -f ${XDG_RUNTIME_DIR}/trackz_last_event_id
 ExecReload=/bin/kill -HUP $MAINPID
