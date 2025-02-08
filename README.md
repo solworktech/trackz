@@ -78,7 +78,7 @@ Copy the following files under the `devilspie2` dir to your hooks dir:
 ### Testing
 
 After setting up the DB, hooks and ENV vars as per the above, invoking `devilspie2 -f /etc/devilspie2 --debug` from 
-your shell and switching between windows, should result in outputs similar to this:
+your shell and switching between windows, should result in output similar to this:
 ```
 08/02/2025 05:53:56pm title hook::insert window 'Go Report Card | Go project code quality report cards — Mozilla Firefox (firefox-esr)' Owner: 'jesse'
 08/02/2025 05:53:57pm title hook::insert window 'Debugging HTTP Client requests with Go · Jamie Tanna | Software Engineer — Mozilla Firefox (firefox-esr)' Owner: 'jesse'
@@ -87,9 +87,9 @@ your shell and switching between windows, should result in outputs similar to th
 ```
 
 If all went well and the output includes no errors, you can use the `sqlite3` CLI client to make sure the data is being
-populated into the DB:
+populated:
 
-```
+```sql
 $ sqlite3 /etc/trackz/trackz.db
 sqlite> .mode box --wrap 40 -- makes the output easier to read, IMHO
 sqlite> SELECT id, process_name, window_name,
@@ -100,14 +100,14 @@ time(focus_end_time - focus_start_time,'unixepoch') as duration from trackz;
 
 The [schema file](./trackz_schema.sql) includes annotations per field, take a look to better understand it.
 
-Records in `trackz` have a `focus_start_time` column and a `focus_end_time`. These values are stored as UNIX epoch
+`trackz` records have a `focus_start_time` column and a `focus_end_time`. These values are stored as UNIX epoch
 timestamps. 
 
-Note that `focus_start_time` is specific to a record/event; it's when the window received focus, not necessarily when the
-process was launched. Each process will likely result in multiple records, as you toggle between windows (and tabs).
+**Note that `focus_start_time` is specific to a record/event; it's when the window received focus, not necessarily when the
+process was launched. Each process will likely result in multiple records, as you toggle between windows (and tabs).**
 
 #### Useful queries
-For all events, output the event ID (auto incremented), process name, window name and the time it spent in focus
+Output the event ID (auto incremented), process name, window name and the time it spent in focus
 (formatted as %H:%M:%S, i.e. 00:01:42):
 
 ```sql
@@ -170,12 +170,17 @@ Sample output:
 
 ```
 
+Aggregate events by `process_name`, `window_name` and day (calculated from `focus_start_time`), 
+order by day and total (aggregated) duration.
+
+This is probably one of the most useful examples as you can use it to see where most of your time was spent.
+
 ```sql
 SELECT DISTINCT process_name, window_name, 
 time (sum (focus_end_time - focus_start_time),'unixepoch') as focus_duration, 
 sum (focus_end_time - focus_start_time) as focus_in_seconds, 
 strftime('%d-%m-%Y', datetime(focus_start_time, 'unixepoch')) as day from trackz 
-group by process_name, window_name, day order by sum (focus_end_time - focus_start_time);
+group by process_name, window_name, day order by day, sum (focus_end_time - focus_start_time);
 ```
 
 Sample output:
