@@ -101,20 +101,23 @@ select id,process_name, window_name, time(focus_end_time - focus_start_time,'uni
 Sample output:
 
 ```
-┌────┬──────────────┬──────────────────────────────────────────────────────────────────────────────────┬──────────┐
-│ id │ process_name │                                   window_name                                    │ duration │
-├────┼──────────────┼──────────────────────────────────────────────────────────────────────────────────┼──────────┤
-│ 1  │ lxterminal   │ devilspie2                                                                       │ 00:00:02 │
-├────┼──────────────┼──────────────────────────────────────────────────────────────────────────────────┼──────────┤
-│ 2  │ firefox-esr  │ jessp01/devilspie2: Devilspie2 is an X window (Lua) hooks mechanism; it supports │ 00:01:37 │
-│    │              │  the following events: window opened, closed, focused and title changed — Mozill │          │
-│    │              │ a Firefox                                                                        │          │
-├────┼──────────────┼──────────────────────────────────────────────────────────────────────────────────┼──────────┤
-│ 3  │ firefox-esr  │ Recruitment - overhaul required, urgently (part II) - Jesse Portnoy — Mozilla Fi │ 00:00:17 │
-│    │              │ refox                                                                            │          │
-├────┼──────────────┼──────────────────────────────────────────────────────────────────────────────────┼──────────┤
-│ 4  │ firefox-esr  │ Watch The Big Bang Theory - Season 6 | Prime Video — Mozilla Firefox             │ 00:02:05 │
-└────┴──────────────┴──────────────────────────────────────────────────────────────────────────────────┴──────────┘
+┌────┬──────────────┬────────────────────────────────────────────────────┬──────────┐
+│ id │ process_name │                    window_name                     │ duration │
+├────┼──────────────┼────────────────────────────────────────────────────┼──────────┤
+│ 1  │ lxterminal   │ devilspie2                                         │ 00:00:02 │
+├────┼──────────────┼────────────────────────────────────────────────────┼──────────┤
+│ 2  │ firefox-esr  │ jessp01/devilspie2: Devilspie2 is an X window (Lua │ 00:01:37 │
+│    │              │ ) hooks mechanism; it supports the following event │          │
+│    │              │ s: window opened, closed, focused and title change │          │
+│    │              │ d — Mozilla Firefox                                │          │
+├────┼──────────────┼────────────────────────────────────────────────────┼──────────┤
+│ 3  │ firefox-esr  │ Recruitment - overhaul required, urgently (part II │ 00:00:17 │
+│    │              │ ) - Jesse Portnoy — Mozilla Firefox                │          │
+├────┼──────────────┼────────────────────────────────────────────────────┼──────────┤
+│ 4  │ firefox-esr  │ Watch The Big Bang Theory - Season 6 | Prime Video │ 00:02:05 │
+│    │              │  — Mozilla Firefox                                 │          │
+└────┴──────────────┴────────────────────────────────────────────────────┴──────────┘
+
 ```
 
 Output all events where the process name is `firefox-esr`, include event duration (formatted as `%H:%M:%S`) and the
@@ -127,14 +130,18 @@ select  id, process_name, window_name, time (focus_end_time - focus_start_time,'
 Sample output:
 
 ```
-┌─────┬──────────────┬──────────────────────────────────────────────────────────────────────┬──────────┬─────────────────────┐
-│ id  │ process_name │                             window_name                              │ duration │   focus_end_time    │
-├─────┼──────────────┼──────────────────────────────────────────────────────────────────────┼──────────┼─────────────────────┤
-│ 34  │ firefox-esr  │ Watch The Big Bang Theory - Season 6 | Prime Video — Mozilla Firefox │ 00:00:58 │ 2025-02-08 19:22:52 │
-│ 38  │ firefox-esr  │ jessp01 (Jesse Portnoy) — Mozilla Firefox                            │ 00:00:49 │ 2025-02-08 19:28:13 │
-│ 37  │ firefox-esr  │ Notifications | LinkedIn — Mozilla Firefox                           │ 00:00:41 │ 2025-02-08 19:27:24 │
-│ 149 │ firefox-esr  │ Command Line Shell For SQLite — Mozilla Firefox                      │ 00:00:01 │ 2025-02-08 20:05:45 │
-└─────┴──────────────┴──────────────────────────────────────────────────────────────────────┴──────────┴─────────────────────┘
+┌─────┬──────────────┬────────────────────────────────────────────────────┬──────────┬─────────────────────┐
+│ id  │ process_name │                    window_name                     │ duration │   focus_end_time    │
+├─────┼──────────────┼────────────────────────────────────────────────────┼──────────┼─────────────────────┤
+│ 34  │ firefox-esr  │ Watch The Big Bang Theory - Season 6 | Prime Video │ 00:00:58 │ 2025-02-08 19:22:52 │
+│     │              │  — Mozilla Firefox                                 │          │                     │
+├─────┼──────────────┼────────────────────────────────────────────────────┼──────────┼─────────────────────┤
+│ 38  │ firefox-esr  │ jessp01 (Jesse Portnoy) — Mozilla Firefox          │ 00:00:49 │ 2025-02-08 19:28:13 │
+├─────┼──────────────┼────────────────────────────────────────────────────┼──────────┼─────────────────────┤
+│ 37  │ firefox-esr  │ Notifications | LinkedIn — Mozilla Firefox         │ 00:00:41 │ 2025-02-08 19:27:24 │
+├─────┼──────────────┼────────────────────────────────────────────────────┼──────────┼─────────────────────┤
+│ 149 │ firefox-esr  │ Command Line Shell For SQLite — Mozilla Firefox    │ 00:00:01 │ 2025-02-08 20:05:45 │
+└─────┴──────────────┴────────────────────────────────────────────────────┴──────────┴─────────────────────┘
 ```
 
 ```sql
