@@ -95,7 +95,8 @@ For all events, output the event ID (auto incremented), process name, window nam
 (formatted as %H:%M:%S, i.e. 00:01:42):
 
 ```sql
-select id,process_name, window_name, time(focus_end_time - focus_start_time,'unixepoch') AS duration from trackz;
+SELECT id, process_name, window_name, 
+time(focus_end_time - focus_start_time,'unixepoch') AS duration from trackz;
 ```
 
 Sample output:
@@ -124,31 +125,41 @@ Output all events where the process name is `firefox-esr`, include event duratio
 focus end time (in localtime), order by focus duration:
 
 ```sql
-select  id, process_name, window_name, time (focus_end_time - focus_start_time,'unixepoch') as duration, DATETIME(ROUND(focus_end_time), 'unixepoch','localtime') as focus_end_time from trackz where process_name='firefox-esr' order by duration desc;
+SELECT id, process_name, window_name, 
+time (focus_end_time - focus_start_time,'unixepoch') as duration, 
+DATETIME(ROUND(focus_end_time), 'unixepoch','localtime') as focus_end_time 
+from trackz where process_name='firefox-esr' 
+order by duration desc;
 ```
 
 Sample output:
 
 ```
-┌─────┬──────────────┬──────────────────────────────────────────┬──────────┬─────────────────────┐
-│ id  │ process_name │               window_name                │ duration │   focus_end_time    │
-├─────┼──────────────┼──────────────────────────────────────────┼──────────┼─────────────────────┤
-│ 34  │ firefox-esr  │ Watch The Big Bang Theory - Season 6 | P │ 00:00:58 │ 2025-02-08 19:22:52 │
-│     │              │ rime Video — Mozilla Firefox             │          │                     │
-├─────┼──────────────┼──────────────────────────────────────────┼──────────┼─────────────────────┤
-│ 38  │ firefox-esr  │ jessp01 (Jesse Portnoy) — Mozilla Firefo │ 00:00:49 │ 2025-02-08 19:28:13 │
-│     │              │ x                                        │          │                     │
-├─────┼──────────────┼──────────────────────────────────────────┼──────────┼─────────────────────┤
-│ 37  │ firefox-esr  │ Notifications | LinkedIn — Mozilla Firef │ 00:00:41 │ 2025-02-08 19:27:24 │
-│     │              │ ox                                       │          │                     │
-├─────┼──────────────┼──────────────────────────────────────────┼──────────┼─────────────────────┤
-│ 149 │ firefox-esr  │ Command Line Shell For SQLite — Mozilla  │ 00:00:01 │ 2025-02-08 20:05:45 │
-│     │              │ Firefox                                  │          │                     │
-└─────┴──────────────┴──────────────────────────────────────────┴──────────┴─────────────────────┘
+┌─────┬──────────────┬────────────────────────────────┬──────────┬─────────────────────┐
+│ id  │ process_name │          window_name           │ duration │   focus_end_time    │
+├─────┼──────────────┼────────────────────────────────┼──────────┼─────────────────────┤
+│ 34  │ firefox-esr  │ Watch The Big Bang Theory - Se │ 00:00:58 │ 2025-02-08 19:22:52 │
+│     │              │ ason 6 | Prime Video — Mozilla │          │                     │
+│     │              │  Firefox                       │          │                     │
+├─────┼──────────────┼────────────────────────────────┼──────────┼─────────────────────┤
+│ 38  │ firefox-esr  │ jessp01 (Jesse Portnoy) — Mozi │ 00:00:49 │ 2025-02-08 19:28:13 │
+│     │              │ lla Firefox                    │          │                     │
+├─────┼──────────────┼────────────────────────────────┼──────────┼─────────────────────┤
+│ 37  │ firefox-esr  │ Notifications | LinkedIn — Moz │ 00:00:41 │ 2025-02-08 19:27:24 │
+│     │              │ illa Firefox                   │          │                     │
+├─────┼──────────────┼────────────────────────────────┼──────────┼─────────────────────┤
+│ 149 │ firefox-esr  │ Command Line Shell For SQLite  │ 00:00:01 │ 2025-02-08 20:05:45 │
+│     │              │ — Mozilla Firefox              │          │                     │
+└─────┴──────────────┴────────────────────────────────┴──────────┴─────────────────────┘
+
 ```
 
 ```sql
-select distinct process_name, window_name, time (sum (focus_end_time - focus_start_time),'unixepoch') as focus_duration, sum (focus_end_time - focus_start_time) as focus_in_seconds, strftime('%d-%m-%Y', datetime(focus_start_time, 'unixepoch')) as day from trackz group by process_name, window_name, day order by sum (focus_end_time - focus_start_time) desc limit 5;
+SELECT DISTINCT process_name, window_name, 
+time (sum (focus_end_time - focus_start_time),'unixepoch') as focus_duration, 
+sum (focus_end_time - focus_start_time) as focus_in_seconds, 
+strftime('%d-%m-%Y', datetime(focus_start_time, 'unixepoch')) as day from trackz 
+group by process_name, window_name, day order by sum (focus_end_time - focus_start_time);
 ```
 
 Sample output:
