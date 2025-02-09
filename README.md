@@ -2,7 +2,7 @@
 
 ## Intended use
 
-- Keeping track of how one's time is spent (working on project X, playing game Y, etc)
+- Keeping track of how one's time is spent (working on project X, playing game Y, corresponding with colleague N, etc)
 - Filing billing reports (for contractors, professional services, etc)
 
 **This is not Intended as a tool for companies to spy on their employees. Whilst I cannot prevent that sort of usage, if
@@ -129,6 +129,10 @@ timestamps.
 process was launched. Each process will likely result in multiple records, as you toggle between windows (and tabs).**
 
 ### Useful queries
+
+The sample outputs for the below queries were generated using the `sqlite3` CLI client with `.mode box --wrap 30`.
+See [4. Changing Output Formats](https://www.sqlite.org/cli.html) for supported output modes. One that may be of
+particular interest is `.mode csv`, which you could use to export the data for further manipulation elsewhere.
 
 Output the event ID (auto incremented), process name, window name and the time it spent in focus
 (formatted as %H:%M:%S, i.e. 00:01:42):
