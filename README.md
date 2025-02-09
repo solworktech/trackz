@@ -1,5 +1,4 @@
-# Trackz
-Monitor time spent in X apps/windows
+[Trackz](https://github.com/solworktech/trackz) - Monitor time spent in X apps/windows
 
 ## Intended use
 
@@ -10,18 +9,37 @@ Monitor time spent in X apps/windows
 you have that in mind, know that I do not like you. To put it mildly.**
 
 ## How does it work?
+
 Trackz makes use of [devilspie 2](https://github.com/jessp01/devilspie2/tree/get-process-owner) to set up hooks 
 for window focus and window name/title changes.
-
 These events are then inserted into an SQLite3 DB, allowing you to query it for time spent in a given app/tab/window. Of
 course, the data can then also be visualised or exported to CSV, etc.
 
-**Note: the above GIT repo is a fork of the original [devilspie2](https://www.nongnu.org/devilspie2/). 
+Because the process name, application name, window title and the exact time the window was in focus are all recorded, 
+you can perform granular queries. For example, how long was spent:
+
+- talking to Jim on Slack yesterday?
+- on the "Project X" channel this week?
+- editing spreadsheets in LibreOffice? 
+- editing annoying.cvs specifically?
+- in apps (browser, LibreOffice, terminal, VIM, whatever) where the window title included "Project Z"?
+
+**Pro tips**
+
+- If, like me, you do a lot of work in the terminal, be sure to set custom titles to your tabs to denote what you're
+  working on (i.e: "project X, component Z", "git clone", etc)
+- If you want your reports to include time spent away from the machine, you can use a util like `gxmessage`, for example, to
+  record a lunch break, invoke: `gxmessage --title "Food run" "Let's see how long this takes..."` before you leave and
+  close it when you return 
+
+**Notes**
+
+- the above GIT repo is a fork of the original [devilspie2](https://www.nongnu.org/devilspie2/). 
 The code in the `get-process-owner` branch of this fork is needed to support logging the process owner (pull submitted
 upstream [here](https://github.com/dsalt/devilspie2/pull/39))** 
 
-**Note II: Trackz was tested predominantly on Debian GNU/Linux but should work on any system where Devilspie 2 and
-SQLite3 can run.**
+- Trackz was tested predominantly on Debian GNU/Linux but should work on any system where Devilspie 2 and
+SQLite3 can run.
 
 ## Installation and setup
 
@@ -42,10 +60,12 @@ with:
 ```
 
 #### Creating the DB
+
 Simply run:
 ```sh
 $ sqlite3 /path/to/trackz.db < trackz_schema.sql
 ```
+
 The dir where `trackz.db` resides needs to be owned by the user who will be doing the writing and that user will of
 course need write permissions on `trackz.db`. To better illustrate, if the DB resides in `/etc/trackz/trackz.db` and the
 user `devilspie2` executable will run as is `devilspie` then the below should be enough (assuming you use a reasonable `umask`,
@@ -96,7 +116,7 @@ sqlite> SELECT id, process_name, window_name,
 time(focus_end_time - focus_start_time,'unixepoch') as duration from trackz;
 ```
 
-### Data schema and notes
+## Data schema and notes
 
 The [schema file](./trackz_schema.sql) includes annotations per field, take a look to better understand it.
 
@@ -106,7 +126,8 @@ timestamps.
 **Note that `focus_start_time` is specific to a record/event; it's when the window received focus, not necessarily when the
 process was launched. Each process will likely result in multiple records, as you toggle between windows (and tabs).**
 
-#### Useful queries
+### Useful queries
+
 Output the event ID (auto incremented), process name, window name and the time it spent in focus
 (formatted as %H:%M:%S, i.e. 00:01:42):
 
@@ -136,6 +157,8 @@ Sample output:
 └────┴──────────────┴────────────────────────────────────────────────────┴──────────┘
 
 ```
+
+-----
 
 Output all events where the process name is `firefox-esr`, include event duration (formatted as `%H:%M:%S`) and the
 focus end time (in localtime), order by focus duration:
@@ -169,6 +192,12 @@ Sample output:
 └─────┴──────────────┴────────────────────────────────┴──────────┴─────────────────────┘
 
 ```
+
+You can replace `where process_name='firefox-esr'` with `where window_name like '%project Z%'` to get all events 
+generated from windows that pertain to that project (LibreOffice, browser, terminal, etc), because the window title will
+likely include that string (be it in the filename, title of the web page or the name of the Slack channel).
+
+------
 
 Aggregate events by `process_name`, `window_name` and day (calculated from `focus_start_time`), 
 order by day and total (aggregated) duration.
@@ -204,7 +233,7 @@ Sample output:
 
 ```
 
-### Running Trackz automatically on system init/session init
+## Running Trackz automatically on system init/session init
 
 `devilspie2` needs to run as a user that has access to the X display.
 If you're the only user likely to start X sessions on the machine, simply edit 
