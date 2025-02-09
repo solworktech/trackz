@@ -16,13 +16,13 @@ These events are then inserted into an SQLite3 DB, allowing you to query it for 
 course, the data can then also be visualised or exported to CSV, etc.
 
 Because the process name, application name, window title and the exact time the window was in focus are all recorded, 
-you can perform granular queries. For example, how long was spent:
+you can perform granular queries. For example, you could check how long was spent:
 
-- talking to Jim on Slack yesterday?
-- on the "Project X" channel this week?
-- editing spreadsheets in LibreOffice? 
-- editing annoying.cvs specifically?
-- in apps (browser, LibreOffice, terminal, VIM, whatever) where the window title included "Project Z"?
+- Talking to Jim on Slack yesterday
+- On the "Project X" channel this week
+- Editing spreadsheets in LibreOffice 
+- Editing annoying.cvs specifically
+- In apps (browser, LibreOffice, terminal, VIM, whatever) where the window title included "Project Z"
 
 **Pro tips**
 
