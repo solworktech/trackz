@@ -24,6 +24,8 @@ you can perform granular queries. For example, you could check how long was spen
 - Editing annoying.cvs specifically
 - In apps (browser, LibreOffice, terminal, VIM, whatever) where the window title included "Project Z"
 
+See the [Useful Queries](#useful-queries) section for some examples.
+
 **Pro tips**
 
 - If, like me, you do a lot of work in the terminal, be sure to set custom titles to your tabs to denote what you're
