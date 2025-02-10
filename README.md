@@ -250,6 +250,7 @@ launch X apps from that TTY, it will work and `trackz.process_owner` will be set
 See [devilspie2/devilspie2.service](./devilspie2/devilspie2.service) and
 [devilspie2/devilspie2.env](./devilspie2/devilspie2.env). The location of `devilspie2.service` may vary depending on
 your distro of choice but will likely be `/usr/lib/systemd/system/devilspie2.service`. Check your distro's documentation if you're unsure.
+[devilspie2/devilspie2.env](./devilspie2/devilspie2.env) should be copied to /etc/default/devilspie2
 
 Start the service with:
 
@@ -262,6 +263,9 @@ If you want it to automatically launch at system init:
 ```sh
 systemctl enable devilspie2
 ```
+
+Debug and error messages will be written to `/var/log/devilspie2.log`. Be sure to check it if you're encountering
+unexpected behaviour.
 
 ### Note on running the service as a user that does not initiate an X session
 

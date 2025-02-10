@@ -53,10 +53,14 @@ function insert_to_db(process_name, app_name, window_name, process_owner, focus_
 	    stmt:bind_names{process_name = process_name,  app_name = app_name, window_name = window_name, focus_start_time = time, process_owner = process_owner}
 	    stmt:step()
 	    stmt:finalize()
+
 	    last_event_id_handle = io.open(last_event_id_file,"w")
-	    event_id = last_event_id_handle:read()
-	    last_event_id_handle:write(db:last_insert_rowid())
-	    last_event_id_handle:close()
+	    if not last_event_id_handle then
+		print ("Error: couldn't write to " .. last_event_id_file)
+	    else
+		last_event_id_handle:write(db:last_insert_rowid())
+		last_event_id_handle:close()
+	    end
 	    db:close()
     end
 end
