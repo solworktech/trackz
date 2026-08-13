@@ -1,0 +1,39 @@
+[package]
+name = "trackz-viz"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Database and async runtime
+rusqlite = { version = "0.31", features = ["chrono"] }
+tokio = { version = "1.35", features = ["full"] }
+
+# UI Framework
+egui = "0.28"
+eframe = "0.28"
+egui_extras = { version = "0.28", features = ["datepicker"] }
+
+# Data and time handling
+chrono = { version = "0.4", features = ["serde"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Utilities
+parking_lot = "0.12"
+rfd = "0.14"
+num-traits = "0.2.19"
+jiff = "0.2.35"
+zbus = "5.18.0"
+futures = "0.3.33"
+futures-util = "0.3.33"
+freedesktop_entry_parser = "2.0.1"
+egui-charts = "0.2.0"
+image = "0.25.10"
+
+[profile.release]
+opt-level = 3
+lto = true
