@@ -53,9 +53,10 @@ fn draw_legend_items_with_icons(ui: &mut Ui, results: &[QueryResult]) {
             );
 
             // Icon (if available)
-            if let Some(icon_path) =
-                IconResolver::get_icon_path(&process_name, &["16x16", "32x32", "128x128"])
-            {
+            if let Some(icon_path) = IconResolver::get_icon_path(
+                &process_name,
+                &["16x16", "32x32", "128x128", "256x256"],
+            ) {
                 if let Ok(img) = image::open(&icon_path) {
                     // Resize to 16x16
                     let resized = img.resize_exact(16, 16, image::imageops::FilterType::Lanczos3);
@@ -362,9 +363,10 @@ fn draw_pie_chart_interior(
         if percentage_label > 5 {
             let result = &results[idx];
             if let Some(process_name) = result.get_string("process_name") {
-                if let Some(icon_path) =
-                    IconResolver::get_icon_path(&process_name, &["16x16", "32x32", "128x128"])
-                {
+                if let Some(icon_path) = IconResolver::get_icon_path(
+                    &process_name,
+                    &["16x16", "32x32", "128x128", "256x256"],
+                ) {
                     if let Ok(img) = image::open(&icon_path) {
                         let resized =
                             img.resize_exact(20, 20, image::imageops::FilterType::Lanczos3);

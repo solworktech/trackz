@@ -1,0 +1,39 @@
+# Rust build artifacts
+/target/
+**/*.rs.bk
+*.pdb
+
+# Cargo
+Cargo.lock
+*.rlib
+*.rmeta
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.iml
+
+# Database files
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Build outputs
+*.o
+*.a
+*.so
+*.dylib
+
+# Profiling
+perf.data
+perf.data.old
+flamegraph.svg
+
+# Environment
+.env
+.env.local
