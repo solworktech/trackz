@@ -123,12 +123,16 @@ type settingsForm struct {
 	loaded                             bool
 }
 
-const defaultQuery = `SELECT app_name, SUM(focus_end_time - focus_start_time) AS total_time
+const defaultQuery = `SELECT process_name, window_name AS label,
+       SUM(focus_end_time - focus_start_time) AS duration
 FROM trackz
-WHERE focus_end_time IS NOT NULL AND app_name <> 'sleep_mode'
-GROUP BY app_name
-ORDER BY total_time DESC
-LIMIT 10`
+WHERE focus_end_time IS NOT NULL
+  AND focus_start_time >= unixepoch('now') - 86400
+  AND focus_start_time <= unixepoch('now')
+GROUP BY process_name, window_name
+ORDER BY duration DESC
+LIMIT 20
+`
 
 // New creates the UI for svc. Its windows are created with opts.
 func New(svc *report.Service, opts ...app.Option) *UI {
