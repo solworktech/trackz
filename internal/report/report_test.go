@@ -73,7 +73,7 @@ func TestDashboardAndApps(t *testing.T) {
 	add(t, st, "kblocks", "KBlocks", "open", base.Add(5*time.Hour), -1)        // still open
 	add(t, st, "old", "Old", "yesterday", base.Add(-24*time.Hour), 5000)       // out of range
 
-	d, err := s.Dashboard(context.Background(), Preset(Today), 20)
+	d, err := s.Dashboard(context.Background(), Preset(Today), Filter{}, 20)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +89,7 @@ func TestDashboardAndApps(t *testing.T) {
 		t.Errorf("table = %+v", d.Table.Rows)
 	}
 
-	apps, _, err := s.topApps(context.Background(), Preset(Today), 10)
+	apps, _, err := s.topApps(context.Background(), Preset(Today), Filter{}, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +110,7 @@ func TestTodayUsesDisplayTimeZone(t *testing.T) {
 	}{{"Europe/London", 1}, {"UTC", 0}} {
 		s, st := newService(t, tc.tz)
 		add(t, st, "a", "A", "w", late, 500)
-		d, err := s.Dashboard(context.Background(), Preset(Today), 20)
+		d, err := s.Dashboard(context.Background(), Preset(Today), Filter{}, 20)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -120,30 +120,11 @@ func TestTodayUsesDisplayTimeZone(t *testing.T) {
 	}
 }
 
-func TestDailyGroupsByLocalDay(t *testing.T) {
-	s, st := newService(t, "Europe/London")
-	add(t, st, "a", "A", "w", time.Date(2025, 6, 29, 23, 30, 0, 0, time.UTC), 600) // 30 Jun local
-	add(t, st, "b", "B", "w", time.Date(2025, 6, 30, 10, 0, 0, 0, time.UTC), 600)  // 30 Jun
-	add(t, st, "a", "A", "x", time.Date(2025, 7, 1, 10, 0, 0, 0, time.UTC), 300)   // 1 Jul
-	r, _ := CustomRange(Date{2025, 6, 28}, Date{2025, 7, 1})
-	series, table, err := s.Daily(context.Background(), r)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(series.Points) != 2 || series.Points[0].Label != "2025-06-30" || series.Points[0].Value != 1200 ||
-		series.Points[0].Detail != "2 apps" {
-		t.Errorf("daily = %+v", series.Points)
-	}
-	if table.Rows[1][3].Int != 1 {
-		t.Errorf("table = %+v", table.Rows)
-	}
-}
-
 func TestActivityHourly(t *testing.T) {
 	s, st := newService(t, "Europe/London")
 	add(t, st, "a", "A", "w", time.Date(2025, 7, 1, 9, 10, 0, 0, time.UTC), 600)
 	add(t, st, "a", "A", "v", time.Date(2025, 7, 1, 9, 40, 0, 0, time.UTC), 300)
-	series, err := s.Activity(context.Background(), Preset(Today))
+	series, err := s.Activity(context.Background(), Preset(Today), Filter{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -272,7 +253,7 @@ func TestOpenRecordAndHidden(t *testing.T) {
 	// The window focused right now: open for 20 minutes.
 	add(t, st, "c", "C", "current", now.Add(-20*time.Minute), -1)
 
-	res, err := s.Run(context.Background(), ViewDashboard, Preset(Today))
+	res, err := s.Run(context.Background(), ViewDashboard, Preset(Today), Filter{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -343,7 +324,7 @@ func TestShortVisitsAddUp(t *testing.T) {
 		start = start.Add(20 * time.Second)
 	}
 	add(t, st, "xfce4-appfinder", "Xfce4-appfinder", "Application Finder", start, 8)
-	res, err := s.Run(context.Background(), ViewDashboard, Preset(Today))
+	res, err := s.Run(context.Background(), ViewDashboard, Preset(Today), Filter{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -353,8 +334,8 @@ func TestShortVisitsAddUp(t *testing.T) {
 	if res.Hidden.Count != 1 || res.Hidden.Seconds != 8 {
 		t.Errorf("hidden = %+v", res.Hidden)
 	}
-	daily, _, err := s.Daily(context.Background(), Preset(Today))
-	if err != nil || len(daily.Points) != 1 || daily.Points[0].Value != 408 {
-		t.Errorf("daily total should include every record: %+v %v", daily.Points, err)
+	apps, hidden, err := s.timePerApp(context.Background(), Preset(Today), Filter{})
+	if err != nil || apps.Total()+float64(hidden.Seconds) != 408 {
+		t.Errorf("app totals should include every record: %+v %+v %v", apps.Points, hidden, err)
 	}
 }

@@ -133,13 +133,12 @@ const (
 	ViewTopApps
 	ViewTimeSpent
 	ViewWindowActivity
-	ViewDailyStats
 	ViewCustomQuery
 	ViewSettings
 )
 
 // Views lists the views in UI order.
-var Views = []View{ViewDashboard, ViewTopApps, ViewTimeSpent, ViewWindowActivity, ViewDailyStats, ViewCustomQuery, ViewSettings}
+var Views = []View{ViewDashboard, ViewTopApps, ViewTimeSpent, ViewWindowActivity, ViewCustomQuery, ViewSettings}
 
 func (v View) String() string {
 	switch v {
@@ -151,8 +150,6 @@ func (v View) String() string {
 		return "Time Spent"
 	case ViewWindowActivity:
 		return "Window Activity"
-	case ViewDailyStats:
-		return "Daily Stats"
 	case ViewCustomQuery:
 		return "Custom Query"
 	case ViewSettings:
@@ -169,6 +166,8 @@ type Result struct {
 	Series Series
 	Table  *store.Table
 	Range  Range
+	// Filter is the filter the result was computed with.
+	Filter Filter
 	// Generated is when the data was computed.
 	Generated time.Time
 	// Hidden describes entries (windows or applications) left out because

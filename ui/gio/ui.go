@@ -60,26 +60,37 @@ type UI struct {
 	mu      sync.Mutex
 	results map[report.View]*viewData
 	cfgGen  int
+	dataGen int // guarded by mu; bumped when the data changed (a status)
 
-	dashPie, spentPie, customPie   pieChart
-	dashTable, dailyTable, custTbl tableView
-	topBars, customBars            barChart
-	activity, customLine           lineChart
-	dailyCols, customCols          columnChart
-	exportPath                     widget.Editor
-	exportBtn                      widget.Clickable
-	exportFor                      report.View
-	queryEd                        sqlEditor
-	picker                         queryPicker
-	saveDlg                        saveDialog
-	saveQuery                      widget.Clickable
-	runQuery                       widget.Clickable
-	chartKind                      widget.Enum
-	custom                         customData
-	settings                       settingsForm
-	status                         string
-	statusErr                      bool
-	statusAt                       time.Time
+	filter      report.Filter // applied to the predefined views
+	filterDlg   filterDialog
+	filterBtn   widget.Clickable
+	clearFilter widget.Clickable
+
+	statusBtn widget.Clickable // "Set Status"
+	statusDlg statusDialog
+	away      awayDialog
+
+	dashPie, spentPie, customPie pieChart
+	dashTable, custTbl           tableView
+	topBars, customBars          barChart
+	activity, customLine         lineChart
+	customCols                   columnChart
+	exportPath                   widget.Editor
+	exportBtn                    widget.Clickable
+	exportFor                    report.View
+	queryEd                      sqlEditor
+	picker                       queryPicker
+	saveDlg                      saveDialog
+	saveQuery                    widget.Clickable
+	runQuery                     widget.Clickable
+	chartKind                    widget.Enum
+	custom                       customData
+	settings                     settingsForm
+	statusMu                     sync.Mutex // guards the status bar message
+	status                       string
+	statusErr                    bool
+	statusAt                     time.Time
 }
 
 type viewData struct {
@@ -178,6 +189,8 @@ func (u *UI) Run() error {
 	if u.tray != nil {
 		defer u.tray.Close()
 	}
+	go u.resumeStatus()
+	defer u.endStatusOnExit()
 	for {
 		err := u.runWindow()
 		if err != nil || u.quitting.Load() || !u.tray.Active() {
@@ -232,7 +245,15 @@ func (u *UI) signal() {
 }
 
 func (u *UI) setStatus(err bool, format string, args ...any) {
+	u.statusMu.Lock()
 	u.status, u.statusErr, u.statusAt = fmt.Sprintf(format, args...), err, time.Now()
+	u.statusMu.Unlock()
+}
+
+// setStatusAsync is setStatus for other goroutines: it also redraws.
+func (u *UI) setStatusAsync(err bool, format string, args ...any) {
+	u.setStatus(err, format, args...)
+	u.invalidate()
 }
 
 func (u *UI) setExportDefault() {
@@ -249,7 +270,10 @@ func (u *UI) setExportDefault() {
 // resultKey identifies the inputs of a report, so results are recomputed
 // when the range or the settings change (and never shown for other inputs).
 func (u *UI) resultKey() string {
-	return fmt.Sprintf("%d|%v|%v|%v|%d", u.rng.Kind, u.rng.FromDay, u.rng.ToDay, u.view, u.cfgGen)
+	u.mu.Lock()
+	gen := u.dataGen
+	u.mu.Unlock()
+	return fmt.Sprintf("%d|%v|%v|%v|%d|%d|%q", u.rng.Kind, u.rng.FromDay, u.rng.ToDay, u.view, u.cfgGen, gen, u.filter.Key())
 }
 
 // ensure starts loading the current view's report if needed.
@@ -274,11 +298,11 @@ func (u *UI) ensure(force bool) {
 	d = nd
 	u.results[v] = d
 	u.mu.Unlock()
-	rng := u.rng
+	rng, filter := u.rng, u.filter
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 		defer cancel()
-		res, err := u.svc.Run(ctx, v, rng)
+		res, err := u.svc.Run(ctx, v, rng, filter)
 		if res != nil {
 			for _, p := range res.Series.Points {
 				u.icons.prefetch(p.Process, p.App)
@@ -339,6 +363,15 @@ func (u *UI) handleInput(gtx C) {
 	}
 	if u.rangeBtn.Clicked(gtx) {
 		u.openRangeModal()
+	}
+	if u.filterBtn.Clicked(gtx) {
+		u.openFilterDialog()
+	}
+	if u.clearFilter.Clicked(gtx) {
+		u.applyFilter(report.Filter{})
+	}
+	if u.statusBtn.Clicked(gtx) {
+		u.openStatusDialog()
 	}
 	for {
 		ev, ok := u.rowLimit.Update(gtx)
@@ -485,9 +518,16 @@ func (u *UI) layout(gtx C) D {
 	if u.saveDlg.open {
 		u.layoutSaveDialog(gtx)
 	}
+	if u.filterDlg.open {
+		u.layoutFilterDialog(gtx)
+	}
+	if u.statusDlg.open {
+		u.layoutStatusDialog(gtx)
+	}
 	if u.daemonState().dialog {
 		u.layoutDaemonDialog(gtx)
 	}
+	u.layoutAwayDialog(gtx) // on top of everything while a status is set
 	return d
 }
 
@@ -531,6 +571,10 @@ func (u *UI) layoutTabs(gtx C) D {
 				})
 			}))
 		}
+		children = append(children,
+			layout.Flexed(1, func(gtx C) D { return D{Size: image.Pt(gtx.Constraints.Min.X, 0)} }),
+			layout.Rigid(func(gtx C) D { return smallButton(gtx, u.th, &u.statusBtn, "Set Status") }),
+		)
 		return layout.Flex{Alignment: layout.Middle}.Layout(gtx, children...)
 	})
 }
@@ -561,6 +605,14 @@ func (u *UI) layoutRangeBar(gtx C) D {
 			}))
 		}
 		children = append(children,
+			layout.Rigid(layout.Spacer{Width: 8}.Layout),
+			layout.Rigid(func(gtx C) D {
+				label := "Filter…"
+				if u.filter.Active() {
+					label = "Filter (on)…"
+				}
+				return segButton(gtx, u.th, &u.filterBtn, label, u.filter.Active())
+			}),
 			layout.Rigid(layout.Spacer{Width: 8}.Layout),
 			layout.Rigid(func(gtx C) D {
 				return layout.Inset{Right: 6, Top: 8}.Layout(gtx, material.Body2(u.th, "Rows").Layout)
@@ -603,6 +655,25 @@ func (u *UI) heading(gtx C, title string) D {
 			l.Color = cs.muted
 			return l.Layout(gtx)
 		}),
+		layout.Flexed(1, func(gtx C) D {
+			if !u.filter.Active() {
+				return D{Size: image.Pt(gtx.Constraints.Min.X, 0)}
+			}
+			// What the data leaves out is easy to forget: say so in the
+			// accent colour, with a way back.
+			return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+				layout.Flexed(1, func(gtx C) D {
+					return layout.Inset{Left: 12}.Layout(gtx, func(gtx C) D {
+						return truncLabel(gtx, u.th, 14, cs.active, "Filtered: "+u.filter.Describe())
+					})
+				}),
+				layout.Rigid(func(gtx C) D {
+					return layout.Inset{Left: 8}.Layout(gtx, func(gtx C) D {
+						return segButton(gtx, u.th, &u.clearFilter, "Clear filter", false)
+					})
+				}),
+			)
+		}),
 	)
 }
 
@@ -638,13 +709,6 @@ func (u *UI) layoutContent(gtx C) D {
 		case report.ViewWindowActivity:
 			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 				layout.Flexed(1, func(gtx C) D { return u.activity.layout(gtx, u.th, res.Series) }),
-				layout.Rigid(u.layoutExport),
-			)
-		case report.ViewDailyStats:
-			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-				layout.Flexed(0.6, func(gtx C) D { return u.dailyCols.layout(gtx, u.th, res.Series) }),
-				layout.Rigid(layout.Spacer{Height: 8}.Layout),
-				layout.Flexed(0.4, func(gtx C) D { return u.dailyTable.layout(gtx, u.th, res.Table) }),
 				layout.Rigid(u.layoutExport),
 			)
 		}
@@ -898,8 +962,10 @@ func (u *UI) layoutSettings(gtx C) D {
 
 func (u *UI) layoutStatus(gtx C) D {
 	var lines []layout.FlexChild
-	if u.status != "" && time.Since(u.statusAt) <= 15*time.Second {
-		msg, isErr := u.status, u.statusErr
+	u.statusMu.Lock()
+	msg, isErr, at := u.status, u.statusErr, u.statusAt
+	u.statusMu.Unlock()
+	if msg != "" && time.Since(at) <= 15*time.Second {
 		lines = append(lines, layout.Rigid(func(gtx C) D {
 			l := material.Body2(u.th, msg)
 			l.Color = cs.ok

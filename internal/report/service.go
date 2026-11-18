@@ -126,39 +126,51 @@ func (s *Service) RangeLabel(r Range) string {
 	return cfg.FormatDate(from) + " to " + cfg.FormatDate(to)
 }
 
-// FormatTime renders a Unix timestamp in the display zone and format.
-func (s *Service) FormatTime(unix int64) string {
-	return s.Config().FormatDateTime(time.Unix(unix, 0))
-}
-
-func (s *Service) records(ctx context.Context, r Range) ([]store.Record, error) {
+// records returns the records in r that pass f, with the time spent in a
+// status taken out of the others (see Status).
+func (s *Service) records(ctx context.Context, r Range, f Filter) ([]store.Record, error) {
 	from, to := r.Bounds(s.now(), s.Config().Location())
-	return s.st.Records(ctx, from.Unix(), to.Unix(), 0, s.now().Unix())
+	recs, err := s.st.Records(ctx, from.Unix(), to.Unix(), 0, s.now().Unix())
+	if err != nil {
+		return nil, err
+	}
+	return f.apply(clipStatuses(recs)), nil
 }
 
-// Run produces the result for one of the predefined views.
-func (s *Service) Run(ctx context.Context, v View, r Range) (*Result, error) {
-	res := &Result{View: v, Range: r, Generated: s.now()}
+// Apps returns the applications with focus time in r (ignoring any
+// filter), most used first: Label and App are the app_name, Process its
+// main process (for icons), Value the seconds.
+func (s *Service) Apps(ctx context.Context, r Range) ([]Point, error) {
+	recs, err := s.records(ctx, r, Filter{})
+	if err != nil {
+		return nil, err
+	}
+	pts := appTotals(recs)
+	sort.SliceStable(pts, func(i, j int) bool { return pts[i].Value > pts[j].Value })
+	return pts, nil
+}
+
+// Run produces the result for one of the predefined views, from the records
+// that pass f.
+func (s *Service) Run(ctx context.Context, v View, r Range, f Filter) (*Result, error) {
+	res := &Result{View: v, Range: r, Filter: f, Generated: s.now()}
 	var err error
 	switch v {
 	case ViewDashboard:
 		var d *Dashboard
-		d, err = s.Dashboard(ctx, r, s.Config().RowLimit)
+		d, err = s.Dashboard(ctx, r, f, s.Config().RowLimit)
 		if d != nil {
 			res.Kind, res.Series, res.Table, res.Hidden = PieChart, d.Series, d.Table, d.Hidden
 		}
 	case ViewTopApps:
 		res.Kind = BarChart
-		res.Series, res.Hidden, err = s.topApps(ctx, r, 10)
+		res.Series, res.Hidden, err = s.topApps(ctx, r, f, 10)
 	case ViewTimeSpent:
 		res.Kind = PieChart
-		res.Series, res.Hidden, err = s.timePerApp(ctx, r)
+		res.Series, res.Hidden, err = s.timePerApp(ctx, r, f)
 	case ViewWindowActivity:
 		res.Kind = LineChart
-		res.Series, err = s.Activity(ctx, r)
-	case ViewDailyStats:
-		res.Kind = TimeSeriesChart
-		res.Series, res.Table, err = s.Daily(ctx, r)
+		res.Series, err = s.Activity(ctx, r, f)
 	default:
 		return nil, fmt.Errorf("view %s has no predefined report", v)
 	}
@@ -169,8 +181,8 @@ func (s *Service) Run(ctx context.Context, v View, r Range) (*Result, error) {
 }
 
 // Dashboard returns the top `limit` (process, window) pairs by focus time.
-func (s *Service) Dashboard(ctx context.Context, r Range, limit int) (*Dashboard, error) {
-	recs, err := s.records(ctx, r)
+func (s *Service) Dashboard(ctx context.Context, r Range, f Filter, limit int) (*Dashboard, error) {
+	recs, err := s.records(ctx, r, f)
 	if err != nil {
 		return nil, err
 	}
@@ -257,14 +269,8 @@ func appTotals(recs []store.Record) []Point {
 	return pts
 }
 
-// TopApps returns the `limit` applications with the most focus time.
-func (s *Service) TopApps(ctx context.Context, r Range, limit int) (Series, error) {
-	ser, _, err := s.topApps(ctx, r, limit)
-	return ser, err
-}
-
-func (s *Service) topApps(ctx context.Context, r Range, limit int) (Series, Hidden, error) {
-	recs, err := s.records(ctx, r)
+func (s *Service) topApps(ctx context.Context, r Range, f Filter, limit int) (Series, Hidden, error) {
+	recs, err := s.records(ctx, r, f)
 	if err != nil {
 		return Series{}, Hidden{}, err
 	}
@@ -276,14 +282,8 @@ func (s *Service) topApps(ctx context.Context, r Range, limit int) (Series, Hidd
 	}, hidden, nil
 }
 
-// TimePerApp returns focus time for every application.
-func (s *Service) TimePerApp(ctx context.Context, r Range) (Series, error) {
-	ser, _, err := s.timePerApp(ctx, r)
-	return ser, err
-}
-
-func (s *Service) timePerApp(ctx context.Context, r Range) (Series, Hidden, error) {
-	recs, err := s.records(ctx, r)
+func (s *Service) timePerApp(ctx context.Context, r Range, f Filter) (Series, Hidden, error) {
+	recs, err := s.records(ctx, r, f)
 	if err != nil {
 		return Series{}, Hidden{}, err
 	}
@@ -294,8 +294,8 @@ func (s *Service) timePerApp(ctx context.Context, r Range) (Series, Hidden, erro
 // Activity returns focus time over time: hourly buckets for ranges of up to
 // two days, daily buckets otherwise. Each record counts in the bucket where
 // its focus started. Detail holds the number of window switches.
-func (s *Service) Activity(ctx context.Context, r Range) (Series, error) {
-	recs, err := s.records(ctx, r)
+func (s *Service) Activity(ctx context.Context, r Range, f Filter) (Series, error) {
+	recs, err := s.records(ctx, r, f)
 	if err != nil {
 		return Series{}, err
 	}
@@ -349,51 +349,6 @@ func (s *Service) Activity(ctx context.Context, r Range) (Series, error) {
 		title = "Window activity per hour"
 	}
 	return Series{Title: title, Unit: Seconds, Points: pts}, nil
-}
-
-// Daily returns total focus time and number of distinct apps per day in the
-// display time zone.
-func (s *Service) Daily(ctx context.Context, r Range) (Series, *store.Table, error) {
-	recs, err := s.records(ctx, r)
-	if err != nil {
-		return Series{}, nil, err
-	}
-	cfg := s.Config()
-	loc := cfg.Location()
-	type day struct {
-		total float64
-		apps  map[string]bool
-	}
-	days := map[Date]*day{}
-	var order []Date
-	for _, rec := range recs {
-		d := DateOf(time.Unix(rec.Start, 0).In(loc))
-		x := days[d]
-		if x == nil {
-			x = &day{apps: map[string]bool{}}
-			days[d] = x
-			order = append(order, d)
-		}
-		x.total += float64(rec.Duration())
-		x.apps[rec.AppName] = true
-	}
-	sort.Slice(order, func(i, j int) bool { return order[i].Before(order[j]) })
-	series := Series{Title: "Daily usage", Unit: Seconds}
-	t := &store.Table{Columns: []string{"day", "total_time", "seconds", "app_count"}}
-	for _, d := range order {
-		x := days[d]
-		label := cfg.FormatDate(d.In(loc))
-		series.Points = append(series.Points, Point{
-			Label:  label,
-			Value:  x.total,
-			Detail: fmt.Sprintf("%d apps", len(x.apps)),
-		})
-		t.Rows = append(t.Rows, []store.Value{
-			text(label), text(timefmt.Duration(int64(x.total))),
-			integer(int64(x.total)), integer(int64(len(x.apps))),
-		})
-	}
-	return series, t, nil
 }
 
 // Recorder describes the trackz daemon recording to this service's

@@ -37,7 +37,15 @@ func TestDesktopLookup(t *testing.T) {
 	write(filepath.Join(root, "icons", "hicolor", "scalable", "apps", "vectorapp.svg"), []byte(
 		`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="#00f"/></svg>`))
 
+	// An SVG oksvg renders blank must not hide a usable PNG.
+	write(filepath.Join(root, "icons", "hicolor", "scalable", "apps", "ghost.svg"), []byte(
+		`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"></svg>`))
+	write(filepath.Join(root, "pixmaps", "ghost.png"), pngData.Bytes())
+
 	r := New(24)
+	if got := r.Icon("ghost", ""); got == nil || got.Bounds().Dx() != 32 {
+		t.Errorf("blank SVG should fall back to the PNG: %v", got)
+	}
 	if r.Icon("exterm", "") == nil {
 		t.Error("lookup by Exec name failed")
 	}

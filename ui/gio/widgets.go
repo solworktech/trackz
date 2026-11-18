@@ -209,8 +209,9 @@ func line(gtx C, a, b f32.Point, col color.NRGBA, width float32) {
 	paint.FillShape(gtx.Ops, col, clip.Stroke{Path: p.End(), Width: width}.Op())
 }
 
-// tooltip draws lines of text in a dark box near pt, kept inside bounds.
-func tooltip(gtx C, th *material.Theme, pt image.Point, bounds image.Point, lines ...string) {
+// tooltip draws lines of text in a dark box near pt, kept inside bounds,
+// with icon (if not nil) on the left.
+func tooltip(gtx C, th *material.Theme, pt image.Point, bounds image.Point, icon *paint.ImageOp, lines ...string) {
 	pad := gtx.Dp(6)
 	w, h := 0, 0
 	sizes := make([]image.Point, len(lines))
@@ -221,7 +222,13 @@ func tooltip(gtx C, th *material.Theme, pt image.Point, bounds image.Point, line
 		}
 		h += sizes[i].Y
 	}
-	box := image.Rect(0, 0, w+2*pad, h+2*pad)
+	textX := pad
+	if icon != nil {
+		iconPx := gtx.Dp(tooltipIconSize)
+		textX += iconPx + pad
+		h = max(h, iconPx)
+	}
+	box := image.Rect(0, 0, textX+w+pad, h+2*pad)
 	pos := pt.Add(image.Pt(gtx.Dp(12), gtx.Dp(12)))
 	if pos.X+box.Dx() > bounds.X {
 		pos.X = pt.X - box.Dx() - gtx.Dp(8)
@@ -238,12 +245,19 @@ func tooltip(gtx C, th *material.Theme, pt image.Point, bounds image.Point, line
 	defer op.Offset(pos).Push(gtx.Ops).Pop()
 	rr := clip.UniformRRect(box, gtx.Dp(4))
 	paint.FillShape(gtx.Ops, cs.tooltip, rr.Op(gtx.Ops))
+	if icon != nil {
+		st := op.Offset(image.Pt(pad, pad)).Push(gtx.Ops)
+		layoutIcon(gtx, icon, tooltipIconSize)
+		st.Pop()
+	}
 	y := pad
 	for i, l := range lines {
-		labelAt(gtx, th, image.Pt(pad, y), 13, cs.tooltipFg, l)
+		labelAt(gtx, th, image.Pt(textX, y), 13, cs.tooltipFg, l)
 		y += sizes[i].Y
 	}
 }
+
+const tooltipIconSize = 28 // dp
 
 // segButton is a toggle-style button used for tabs and presets.
 func segButton(gtx C, th *material.Theme, btn *widget.Clickable, txt string, active bool) D {

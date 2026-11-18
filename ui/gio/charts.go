@@ -10,6 +10,7 @@ import (
 	"gioui.org/io/event"
 	"gioui.org/io/pointer"
 	"gioui.org/layout"
+	"gioui.org/op"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
 	"gioui.org/widget/material"
@@ -64,12 +65,12 @@ func (pc *pieChart) layout(gtx C, th *material.Theme, ic *iconCache, s report.Se
 		return emptyChart(gtx, th)
 	}
 	return layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceBetween}.Layout(gtx,
-		layout.Flexed(0.55, func(gtx C) D { return pc.pie(gtx, th, s, total) }),
+		layout.Flexed(0.55, func(gtx C) D { return pc.pie(gtx, th, ic, s, total) }),
 		layout.Flexed(0.45, func(gtx C) D { return pc.legendList(gtx, th, ic, s, total) }),
 	)
 }
 
-func (pc *pieChart) pie(gtx C, th *material.Theme, s report.Series, total float64) D {
+func (pc *pieChart) pie(gtx C, th *material.Theme, ic *iconCache, s report.Series, total float64) D {
 	size := gtx.Constraints.Max
 	if size.Y > size.X {
 		size.Y = size.X
@@ -110,15 +111,65 @@ func (pc *pieChart) pie(gtx C, th *material.Theme, s report.Series, total float6
 		drawSlice(gtx, c, rr, start, sweep, seriesColor(i))
 		start += sweep
 	}
+	// Icons on the slices wide enough to hold one; the tooltip shows it for
+	// the others.
+	start = -math.Pi / 2
+	for _, p := range s.Points {
+		sweep := p.Value / total * 2 * math.Pi
+		mid := start + sweep/2
+		start += sweep
+		icon := ic.get(p.Process, p.App)
+		if icon == nil {
+			continue
+		}
+		if at, ok := sliceIconSpot(c, r, mid, sweep, float32(gtx.Dp(sliceIconSize))); ok {
+			drawSliceIcon(gtx, icon, at)
+		}
+	}
 	if hovered >= 0 {
 		p := s.Points[hovered]
 		lines := []string{p.Label, s.FormatValue(p.Value) + "  (" + pct(p.Value, total) + ")"}
 		if p.Process != "" && p.Process != p.Label {
 			lines = append(lines, p.Process)
 		}
-		tooltip(gtx, th, pc.hover.pos, size, lines...)
+		tooltip(gtx, th, pc.hover.pos, size, ic.get(p.Process, p.App), lines...)
 	}
 	return D{Size: size}
+}
+
+const sliceIconSize = 22 // dp
+
+// sliceIconSpot returns where to centre an icon of size px on a slice of
+// a pie of radius r centred at c (mid is the slice's middle angle), and
+// whether the slice has room for it: the icon, with a margin, must fit
+// across the slice at that distance from the centre and inside the rim.
+func sliceIconSpot(c f32.Point, r float32, mid, sweep float64, px float32) (f32.Point, bool) {
+	need := float64(px) * 1.4
+	dist := float64(r) * 0.65
+	if float64(r)-dist < need/2 {
+		dist = float64(r) - need/2
+	}
+	across := 2 * dist * math.Sin(math.Min(sweep, math.Pi)/2)
+	if dist <= need/2 || across < need {
+		return f32.Point{}, false
+	}
+	return c.Add(f32.Pt(float32(dist*math.Cos(mid)), float32(dist*math.Sin(mid)))), true
+}
+
+// drawSliceIcon draws icon centred at at, on a disc so it stands out from
+// the slice colour.
+func drawSliceIcon(gtx C, icon *paint.ImageOp, at f32.Point) {
+	px := gtx.Dp(sliceIconSize)
+	pad := gtx.Dp(3)
+	disc := image.Rectangle{
+		Min: image.Pt(int(at.X)-px/2-pad, int(at.Y)-px/2-pad),
+		Max: image.Pt(int(at.X)+px/2+pad, int(at.Y)+px/2+pad),
+	}
+	bg := cs.panel
+	bg.A = 0xe0
+	paint.FillShape(gtx.Ops, bg, clip.Ellipse(disc).Op(gtx.Ops))
+	defer op.Offset(image.Pt(int(at.X)-px/2, int(at.Y)-px/2)).Push(gtx.Ops).Pop()
+	layoutIcon(gtx, icon, sliceIconSize)
 }
 
 func drawSlice(gtx C, c f32.Point, r float32, start, sweep float64, col color.NRGBA) {
@@ -251,7 +302,7 @@ func (cc *columnChart) layout(gtx C, th *material.Theme, s report.Series) D {
 		if p.Detail != "" {
 			lines = append(lines, p.Detail)
 		}
-		tooltip(gtx, th, cc.hover.pos, size, lines...)
+		tooltip(gtx, th, cc.hover.pos, size, nil, lines...)
 	}
 	return D{Size: size}
 }
@@ -308,7 +359,7 @@ func (lc *lineChart) layout(gtx C, th *material.Theme, s report.Series) D {
 		if p.Detail != "" {
 			lines = append(lines, p.Detail)
 		}
-		tooltip(gtx, th, lc.hover.pos, size, lines...)
+		tooltip(gtx, th, lc.hover.pos, size, nil, lines...)
 	}
 	return D{Size: size}
 }

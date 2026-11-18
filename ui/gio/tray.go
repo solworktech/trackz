@@ -20,17 +20,23 @@ func (u *UI) startTray() *tray.Tray {
 		Tooltip:    "Trackz: time spent in windows and applications",
 		Icon:       assets.Icon,
 		OnActivate: u.Raise,
-		Items: []tray.Item{
-			{Label: "Show Trackz", OnClick: u.Raise},
-			{}, // separator
-			{Label: "Quit", OnClick: u.quit},
-		},
+		Items:      u.trayItems(),
 	})
 	if err != nil {
 		log.Printf("trackz-viz: no tray icon: %v", err)
 		return nil
 	}
 	return t
+}
+
+// trayItems is the tray menu (while a status is set, statusChanged adds
+// "I'm back" at the top).
+func (u *UI) trayItems() []tray.Item {
+	return []tray.Item{
+		{Label: "Show Trackz", OnClick: u.Raise},
+		{}, // separator
+		{Label: "Quit", OnClick: u.quit},
+	}
 }
 
 // Raise brings the window to the front and gives it focus, or opens a new

@@ -171,11 +171,24 @@ $ trackz-viz            # or: trackz-viz -db /path/to/trackz.db
 - **Time range**: Today, last 7/30/90 days, or custom dates; the number of dashboard rows is configurable.
 - **Dashboard**: the top activities (process + window title) as a pie chart with application icons, plus a table;
   exportable as CSV (to the path in the *Export to* field, which defaults to `~/trackz-<view>-<date>.csv`).
-- Hovering over a pie slice, bar or point shows its details.
+- Pie slices wide enough show the application's icon; hovering over a slice, bar or point shows its details (with the
+  icon, for pie slices).
 - Reports that include the present refresh themselves every 5 minutes (configurable; 0 turns it off), and the window
   currently in focus is counted up to now. The heading shows how many records were left out for being shorter than the minimum duration.
 - **Top Apps** (bar chart), **Time Spent** per app (pie chart), **Window Activity** over time (focus time per hour,
-  or per day for longer ranges), **Daily Stats** (focus time and number of apps per day).
+  or per day for longer ranges).
+- **Filter**: *Filter…* opens a dialog to keep only windows whose title contains some text (ignoring case) and to
+  exclude applications by unticking them in the list of applications used in the range. It applies to every view but
+  Custom Query (and to CSV exports) until cleared. While it is on, the button reads *Filter (on)…* and the heading
+  says what is filtered, e.g. `Filtered: window titles containing "invoice" · excluding Firefox`, with a *Clear filter*
+  button.
+- **Set Status**: records time away from the computer's normal use. Pick *Out to lunch*, *Meeting*, *Coffee break*,
+  *Phone call*, *Away from desk*, *Errand* or type another status, then *Start Now*: a record with `trackz-viz` as the
+  application (`app_name`), the status as the window title (`window_name`) and `trackz-status` as `process_name` is
+  started, and an *I'm back* box stays up until you click it or press Enter, which ends the record. The tray menu
+  also offers *I'm back* meanwhile. The time within a status counts for the status only: reports leave it out of the
+  window that had focus meanwhile (usually `trackz-viz` itself) and of screen-lock periods. Quitting `trackz-viz`
+  ends the status; if `trackz-viz` was killed, the box comes back at its next start.
 - **Custom range**: the *Custom…* button opens a dialog with two calendars and quick picks (this/last week, this/last
   month, this year). Enter applies, Esc or a click outside cancels.
 - **Custom Query**: any `SELECT` (or `WITH ... SELECT`), with SQL syntax highlighting (double-click selects a word,

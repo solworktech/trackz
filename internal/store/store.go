@@ -24,6 +24,13 @@ const (
 	SleepAppName     = "sleep_mode"
 	SleepWindowName  = "System Sleep"
 	SleepOwner       = "system"
+
+	// Records written by trackz-viz for a status the user set ("Out to
+	// lunch", ...): app_name is trackz-viz and window_name the status. The
+	// process name tells them apart from the daemon's records of the
+	// trackz-viz window itself.
+	StatusProcessName = "trackz-status"
+	StatusAppName     = "trackz-viz"
 )
 
 // Store wraps a database handle.
@@ -180,6 +187,21 @@ func (s *Store) CloseOrphan(ctx context.Context, id, end int64) (bool, error) {
 	return n == 1, nil
 }
 
+// OpenStatus returns the newest status record that has not ended, if any
+// (ok is false when there is none).
+func (s *Store) OpenStatus(ctx context.Context) (r Record, ok bool, err error) {
+	row := s.db.QueryRowContext(ctx, `SELECT `+recordColumns+` FROM trackz
+		WHERE process_name = ? AND focus_end_time IS NULL ORDER BY id DESC LIMIT 1`, StatusProcessName)
+	r, err = scanRecord(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Record{}, false, nil
+	}
+	if err != nil {
+		return Record{}, false, err
+	}
+	return r, true, nil
+}
+
 // Get returns the record with the given id.
 func (s *Store) Get(ctx context.Context, id int64) (Record, error) {
 	row := s.db.QueryRowContext(ctx, `SELECT `+recordColumns+` FROM trackz WHERE id = ?`, id)
@@ -190,19 +212,23 @@ func (s *Store) Get(ctx context.Context, id int64) (Record, error) {
 // seconds, inclusive) and lasted more than minDuration seconds, ordered by
 // start time.
 //
-// The newest record, if still open (the window focused right now, or the
-// current sleep/lock period), is included with End = now, so reports cover
-// the present. Older open records (left behind when the tracker was killed)
-// are ignored, as their real end is unknown.
+// The tracker's newest record, if still open (the window focused right
+// now, or the current sleep/lock period), is included with End = now, so
+// reports cover the present; so is an open status record. Older open
+// records (left behind when the tracker was killed) are ignored, as their
+// real end is unknown.
 func (s *Store) Records(ctx context.Context, from, to, minDuration, now int64) ([]Record, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, process_name, app_name, window_name, focus_start_time,
 		        COALESCE(focus_end_time, ?), COALESCE(process_owner, '')
 		 FROM trackz
-		 WHERE (focus_end_time IS NOT NULL OR id = (SELECT MAX(id) FROM trackz))
+		 WHERE (focus_end_time IS NOT NULL
+		        OR id = (SELECT MAX(id) FROM trackz WHERE process_name <> ?)
+		        OR process_name = ?)
 		   AND (COALESCE(focus_end_time, ?) - focus_start_time) > ?
 		   AND focus_start_time >= ? AND focus_start_time <= ?
-		 ORDER BY focus_start_time, id`, now, now, minDuration, from, to)
+		 ORDER BY focus_start_time, id`,
+		now, StatusProcessName, StatusProcessName, now, minDuration, from, to)
 	if err != nil {
 		return nil, fmt.Errorf("query records: %w", err)
 	}

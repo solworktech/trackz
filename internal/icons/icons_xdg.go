@@ -278,5 +278,20 @@ func rasterizeSVG(data []byte, size int) image.Image {
 	img := image.NewRGBA(image.Rect(0, 0, size, size))
 	scanner := rasterx.NewScannerGV(size, size, img, img.Bounds())
 	icon.Draw(rasterx.NewDasher(size, size, scanner), 1)
+	if blank(img) {
+		// oksvg does not support everything (e.g. some gradients and
+		// filters); a blank result is no icon, so the next candidate is tried.
+		return nil
+	}
 	return img
+}
+
+// blank reports whether img has no visible pixel.
+func blank(img *image.RGBA) bool {
+	for i := 3; i < len(img.Pix); i += 4 {
+		if img.Pix[i] != 0 {
+			return false
+		}
+	}
+	return true
 }
