@@ -18,6 +18,7 @@ import (
 type daemonCheck struct {
 	known   bool // a check has completed
 	running bool
+	waiting bool // not running yet, but still within the start-up grace period
 	err     error
 	dialog  bool // the message box is open
 	ok      widget.Clickable
@@ -25,29 +26,42 @@ type daemonCheck struct {
 	panel   int
 }
 
-const daemonCheckEvery = 30 * time.Second
+const (
+	daemonCheckEvery = 30 * time.Second
+	// daemonGrace is how long trackz-viz waits for trackz at start-up
+	// before saying it is not recording: both are often started together
+	// (by the installer, or at sign-in), and trackz takes a moment to
+	// take its lock.
+	daemonGrace      = 10 * time.Second
+	daemonGraceCheck = 250 * time.Millisecond
+)
 
-// watchDaemon checks at start-up and every daemonCheckEvery. The message
-// box opens on the first failed check and whenever trackz stops; the status
-// bar shows the problem for as long as it lasts.
+// watchDaemon checks at start-up (allowing trackz daemonGrace to start)
+// and every daemonCheckEvery. The message box opens when trackz is not
+// found after the grace period, and whenever it stops; the status bar shows
+// the problem for as long as it lasts.
 func (u *UI) watchDaemon(ctx context.Context) {
-	t := time.NewTicker(daemonCheckEvery)
-	defer t.Stop()
+	graceEnds := time.Now().Add(daemonGrace)
 	for {
 		st, err := u.svc.RecorderStatus()
+		waiting := !st.Running && err == nil && time.Now().Before(graceEnds)
 		u.mu.Lock()
 		d := &u.daemon
-		wasRunning := d.running || !d.known
-		d.known, d.running, d.err = true, st.Running, err
-		if !st.Running && wasRunning {
+		wasRunning := d.running || !d.known || d.waiting
+		d.known, d.running, d.err, d.waiting = true, st.Running, err, waiting
+		if !st.Running && !waiting && wasRunning {
 			d.dialog = true
 		}
 		u.mu.Unlock()
 		u.invalidate()
+		next := daemonCheckEvery
+		if waiting {
+			next = daemonGraceCheck
+		}
 		select {
 		case <-ctx.Done():
 			return
-		case <-t.C:
+		case <-time.After(next):
 		}
 	}
 }
@@ -55,7 +69,7 @@ func (u *UI) watchDaemon(ctx context.Context) {
 func (u *UI) daemonState() daemonCheck {
 	u.mu.Lock()
 	defer u.mu.Unlock()
-	return daemonCheck{known: u.daemon.known, running: u.daemon.running, err: u.daemon.err, dialog: u.daemon.dialog}
+	return daemonCheck{known: u.daemon.known, running: u.daemon.running, waiting: u.daemon.waiting, err: u.daemon.err, dialog: u.daemon.dialog}
 }
 
 func startHint() string {

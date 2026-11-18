@@ -198,9 +198,13 @@ The banner, side image and `License.rtf` are generated (`make icons`) from the l
 $ trackz-viz            # or: trackz-viz -db /path/to/trackz.db
 ```
 
-- **Time range**: Today, last 7/30/90 days, or custom dates; the number of dashboard rows is configurable.
-- **Dashboard**: the top activities (process + window title) as a pie chart with application icons, plus a table;
-  exportable as CSV (to the path in the *Export to* field, which defaults to `~/trackz-<view>-<date>.csv`).
+- **Time range**: Today, last 7/30/90 days, or custom dates. *Rows* sets how many entries the Dashboard and Top Apps
+  show (20 by default).
+- **Dashboard**: the top activities (process + window title) as a pie chart with application icons, plus a table of
+  Process Name (with the icon), Window Title and Duration. A click on a column title sorts by it (durations by
+  length of time, text ignoring case); another click reverses the order. Custom Query tables sort the same way. The
+  dashboard is exportable as CSV (to the path in the *Export to* field, which defaults to
+  `~/trackz-<view>-<date>.csv`), with the duration also in seconds.
 - Pie slices wide enough show the application's icon; hovering over a slice, bar or point shows its details (with the
   icon, for pie slices).
 - Reports that include the present refresh themselves every 5 minutes (configurable; 0 turns it off), and the window
@@ -268,10 +272,11 @@ $ trackz-viz            # or: trackz-viz -db /path/to/trackz.db
   focus its own window; the click then only highlights it.
 - **Recorder check**: `trackz-viz` checks at start-up and every 30 seconds whether `trackz` is recording to the
   database it shows. If not, it says so in a message box (again whenever `trackz` stops) and in the status bar for as
-  long as the problem lasts.
+  long as the problem lasts. At start-up it first gives `trackz` up to 10 seconds to start (the installer, and
+  sign-in, often start both together), showing *Waiting for the trackz recorder to start…* meanwhile.
 - **Appearance**: follows the desktop's dark/light preference (XDG portal, GNOME, GTK and KDE settings on Linux/BSD;
   the system setting on macOS and Windows) and switches live; it can also be forced to light or dark in Settings.
-- **Settings**: appearance, refresh interval, display time zone, date and time formats (strftime-style, e.g. `%d/%m/%Y`), dashboard rows and the
+- **Settings**: appearance, refresh interval, display time zone, date and time formats (strftime-style, e.g. `%d/%m/%Y`), rows (Dashboard and Top Apps) and the
   minimum total for an entry to be listed: windows or applications with less than 120 seconds in the period are hidden
   from the dashboard and the app charts by default. Unlike the original viewer, which dropped every *record* shorter
   than 120 seconds, short visits still count: ten 20-second visits to a window make a 200-second entry. Also in

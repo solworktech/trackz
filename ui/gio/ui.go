@@ -123,13 +123,13 @@ type settingsForm struct {
 	loaded                             bool
 }
 
-const defaultQuery = `SELECT process_name, window_name AS label,
+const defaultQuery = `SELECT process_name, norm_title(window_name) AS label,
        SUM(focus_end_time - focus_start_time) AS duration
 FROM trackz
 WHERE focus_end_time IS NOT NULL
   AND focus_start_time >= unixepoch('now') - 86400
   AND focus_start_time <= unixepoch('now')
-GROUP BY process_name, window_name
+GROUP BY process_name, label
 ORDER BY duration DESC
 LIMIT 20
 `
@@ -569,7 +569,7 @@ func (u *UI) layoutMain(gtx C) D {
 }
 
 func (u *UI) layoutTabs(gtx C) D {
-	return layout.Inset{Left: 8, Right: 8, Top: 8, Bottom: 4}.Layout(gtx, func(gtx C) D {
+	return layout.Inset{Left: 8, Right: 8, Top: 14, Bottom: 4}.Layout(gtx, func(gtx C) D {
 		children := []layout.FlexChild{
 			layout.Rigid(func(gtx C) D {
 				return layout.Inset{Right: 8}.Layout(gtx, func(gtx C) D {
@@ -720,7 +720,7 @@ func (u *UI) layoutContent(gtx C) D {
 			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 				layout.Flexed(0.55, func(gtx C) D { return u.dashPie.layout(gtx, u.th, u.icons, res.Series) }),
 				layout.Rigid(layout.Spacer{Height: 8}.Layout),
-				layout.Flexed(0.45, func(gtx C) D { return u.dashTable.layout(gtx, u.th, res.Table) }),
+				layout.Flexed(0.45, func(gtx C) D { return u.dashTable.layout(gtx, u.th, res.Table, u.dashboardColumns(res)) }),
 				layout.Rigid(u.layoutExport),
 			)
 		case report.ViewTopApps:
@@ -854,7 +854,7 @@ func (u *UI) layoutCustom(gtx C) D {
 			case report.TimeSeriesChart:
 				return u.customCols.layout(gtx, u.th, cd.series)
 			}
-			return u.custTbl.layout(gtx, u.th, cd.table)
+			return u.custTbl.layout(gtx, u.th, cd.table, nil)
 		}),
 		layout.Rigid(func(gtx C) D {
 			if cd.table == nil {
@@ -964,7 +964,7 @@ func (u *UI) layoutSettings(gtx C) D {
 				}),
 			)
 		},
-		func(gtx C) D { return field(gtx, u.th, "Dashboard rows", &s.rows, "20", 120) },
+		func(gtx C) D { return field(gtx, u.th, "Rows (Dashboard and Top Apps)", &s.rows, "20", 120) },
 		func(gtx C) D {
 			return field(gtx, u.th, "Refresh views that include today every (minutes; 0 = off)", &s.refresh, "5", 120)
 		},
@@ -1008,17 +1008,20 @@ func (u *UI) layoutStatus(gtx C) D {
 	}
 	// Stays until trackz is found recording again.
 	if d := u.daemonState(); d.known && !d.running {
-		msg := u.daemonMessage(d)
+		msg, col := u.daemonMessage(d), cs.err
+		if d.waiting {
+			msg, col = "Waiting for the trackz recorder to start…", cs.muted
+		}
 		lines = append(lines, layout.Rigid(func(gtx C) D {
 			return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 				layout.Rigid(func(gtx C) D {
 					sz := gtx.Dp(10)
-					fillRect(gtx, image.Rect(0, 0, sz, sz), cs.err)
+					fillRect(gtx, image.Rect(0, 0, sz, sz), col)
 					return D{Size: image.Pt(sz+gtx.Dp(8), sz)}
 				}),
 				layout.Flexed(1, func(gtx C) D {
 					l := material.Body2(u.th, msg)
-					l.Color = cs.err
+					l.Color = col
 					l.MaxLines = 2
 					return l.Layout(gtx)
 				}),
@@ -1041,7 +1044,7 @@ func (u *UI) layoutTitleSettings(gtx C) D {
 		return layout.Rigid(func(gtx C) D {
 			l := material.Caption(u.th, txt)
 			l.Color = cs.muted
-			return layout.Inset{Bottom: 4}.Layout(gtx, l.Layout)
+			return layout.Inset{Bottom: 5}.Layout(gtx, l.Layout)
 		})
 	}
 	// Live preview of the rules as typed.
@@ -1128,4 +1131,27 @@ func (g *windowGeometry) sizeOption() []app.Option {
 		unit.Dp(float32(g.size.X)/g.metric.PxPerDp),
 		unit.Dp(float32(g.size.Y)/g.metric.PxPerDp),
 	)}
+}
+
+// dashboardColumns shows the dashboard table as Process Name (with the
+// application's icon), Window Title and Duration, sorting the duration by
+// its seconds. The table's other columns (seconds) are for the CSV export.
+func (u *UI) dashboardColumns(res *report.Result) []tableColumn {
+	t := res.Table
+	proc, win := t.ColumnIndex("process_name"), t.ColumnIndex("window_name")
+	dur, secs := t.ColumnIndex("duration"), t.ColumnIndex("seconds")
+	if proc < 0 || win < 0 || dur < 0 || secs < 0 {
+		return nil
+	}
+	pts := res.Series.Points
+	return []tableColumn{
+		{title: "Process Name", src: proc, sortBy: proc, weight: 2.2, icon: func(row int) *paint.ImageOp {
+			if row < len(pts) { // the table's rows are the series' points
+				return u.icons.get(pts[row])
+			}
+			return nil
+		}},
+		{title: "Window Title", src: win, sortBy: win, weight: 6},
+		{title: "Duration", src: dur, sortBy: secs, weight: 1.3, right: true},
+	}
 }

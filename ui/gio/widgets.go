@@ -299,7 +299,7 @@ func field(gtx C, th *material.Theme, caption string, ed *widget.Editor, hint st
 		layout.Rigid(func(gtx C) D {
 			l := material.Caption(th, caption)
 			l.Color = cs.muted
-			return l.Layout(gtx)
+			return layout.Inset{Bottom: 5}.Layout(gtx, l.Layout)
 		}),
 		layout.Rigid(func(gtx C) D {
 			gtx.Constraints.Min.X = gtx.Dp(width)

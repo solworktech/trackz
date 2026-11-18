@@ -217,7 +217,7 @@ func (s *Service) Run(ctx context.Context, v View, r Range, f Filter) (*Result, 
 		}
 	case ViewTopApps:
 		res.Kind = BarChart
-		res.Series, res.Hidden, err = s.topApps(ctx, r, f, 10)
+		res.Series, res.Hidden, err = s.topApps(ctx, r, f, s.Config().RowLimit)
 	case ViewTimeSpent:
 		res.Kind = PieChart
 		res.Series, res.Hidden, err = s.timePerApp(ctx, r, f)
@@ -336,10 +336,12 @@ func (s *Service) topApps(ctx context.Context, r Range, f Filter, limit int) (Se
 		return Series{}, Hidden{}, err
 	}
 	pts, hidden := s.dropSmall(appTotals(recs))
+	pts = topN(pts, limit)
+	// The number shown: fewer than limit when fewer apps were used.
 	return Series{
-		Title:  fmt.Sprintf("Top %d apps by total focus time", limit),
+		Title:  fmt.Sprintf("Top %d apps by total focus time", len(pts)),
 		Unit:   Seconds,
-		Points: topN(pts, limit),
+		Points: pts,
 	}, hidden, nil
 }
 

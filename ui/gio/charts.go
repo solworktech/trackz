@@ -64,10 +64,25 @@ func (pc *pieChart) layout(gtx C, th *material.Theme, ic *iconCache, s report.Se
 	if len(s.Points) == 0 || total <= 0 {
 		return emptyChart(gtx, th)
 	}
-	return layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceBetween}.Layout(gtx,
-		layout.Flexed(0.55, func(gtx C) D { return pc.pie(gtx, th, ic, s, total) }),
-		layout.Flexed(0.45, func(gtx C) D { return pc.legendList(gtx, th, ic, s, total) }),
-	)
+	// The pie takes 55% of the width (as a square, so possibly less of the
+	// height); the legend is centred vertically against it, or starts at
+	// the top and scrolls if it is taller.
+	width := gtx.Constraints.Max.X
+	pieW := width * 55 / 100
+	pg := gtx
+	pg.Constraints = layout.Constraints{Max: image.Pt(pieW, gtx.Constraints.Max.Y)}
+	pd := pc.pie(pg, th, ic, s, total)
+
+	lg := gtx
+	lg.Constraints = layout.Constraints{Max: image.Pt(width-pieW, gtx.Constraints.Max.Y)}
+	m := op.Record(gtx.Ops)
+	ld := pc.legendList(lg, th, ic, s, total)
+	legend := m.Stop()
+	top := max(0, (pd.Size.Y-ld.Size.Y)/2)
+	st := op.Offset(image.Pt(pieW, top)).Push(gtx.Ops)
+	legend.Add(gtx.Ops)
+	st.Pop()
+	return D{Size: image.Pt(width, max(pd.Size.Y, top+ld.Size.Y))}
 }
 
 func (pc *pieChart) pie(gtx C, th *material.Theme, ic *iconCache, s report.Series, total float64) D {

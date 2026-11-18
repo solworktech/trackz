@@ -339,3 +339,36 @@ func TestShortVisitsAddUp(t *testing.T) {
 		t.Errorf("app totals should include every record: %+v %+v %v", apps.Points, hidden, err)
 	}
 }
+
+func TestTopAppsFollowsRowLimit(t *testing.T) {
+	s, st := newService(t, "UTC")
+	base := testNow.Add(-3 * time.Hour)
+	for i, app := range []string{"A", "B", "C", "D"} {
+		add(t, st, strings.ToLower(app), app, "w", base.Add(time.Duration(i)*10*time.Minute), int64(600-60*i))
+	}
+	ctx := context.Background()
+	cfg := s.Config()
+	cfg.RowLimit = 3
+	if err := s.UpdateConfig(cfg); err != nil {
+		t.Fatal(err)
+	}
+	res, err := s.Run(ctx, ViewTopApps, Preset(Today), Filter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Series.Points) != 3 || res.Series.Title != "Top 3 apps by total focus time" {
+		t.Errorf("limit 3: %q %+v", res.Series.Title, res.Series.Points)
+	}
+	cfg.RowLimit = 20
+	if err := s.UpdateConfig(cfg); err != nil {
+		t.Fatal(err)
+	}
+	res, err = s.Run(ctx, ViewTopApps, Preset(Today), Filter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Fewer apps than the limit: the title says how many there are.
+	if len(res.Series.Points) != 4 || res.Series.Title != "Top 4 apps by total focus time" {
+		t.Errorf("limit 20: %q %+v", res.Series.Title, res.Series.Points)
+	}
+}

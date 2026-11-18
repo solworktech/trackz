@@ -31,7 +31,8 @@ const (
 	// many seconds. (The original viewer's DURATION_THRESHOLD applied the
 	// same value to each record, which dropped all short visits.)
 	DefaultMinDuration = 120
-	// DefaultRowLimit is the default number of rows on the dashboard.
+	// DefaultRowLimit is the default number of rows on the dashboard and
+	// of applications in Top Apps.
 	DefaultRowLimit = 20
 	// DefaultRefreshMinutes is how often views showing the present are
 	// recomputed.
@@ -54,7 +55,8 @@ type Config struct {
 	// DateFormat and TimeFormat are strftime-style patterns.
 	DateFormat string `json:"date_format"`
 	TimeFormat string `json:"time_format"`
-	// RowLimit is the number of entries shown on the dashboard.
+	// RowLimit is the number of entries shown on the dashboard and in Top
+	// Apps (the Rows field).
 	RowLimit int `json:"row_limit"`
 	// MinDurationSeconds hides report entries (a window, an application)
 	// whose total focus time in the period is below this. Individual short
