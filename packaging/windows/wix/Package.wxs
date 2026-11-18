@@ -38,21 +38,36 @@
     </StandardDirectory>
 
     <Feature Id="Main" Title="Trackz">
-      <ComponentRef Id="Program" />
+      <ComponentGroupRef Id="ProgramFiles" />
       <ComponentRef Id="StartMenuShortcut" />
       <ComponentRef Id="AutoStart" />
     </Feature>
 
-    <!-- Per-user components need a registry key path (ICE38) and must
-         remove the folders they create (ICE64). -->
-    <Component Id="Program" Directory="INSTALLFOLDER">
-      <File Id="TrackzExe" Source="$(var.BinDir)\trackz.exe" />
-      <File Id="TrackzVizExe" Source="$(var.BinDir)\trackz-viz.exe" />
-      <File Id="LicenseTxt" Source="$(var.RepoDir)\LICENSE" Name="LICENSE.txt" />
-      <RegistryValue Root="HKCU" Key="Software\Trackz" Name="InstallFolder" Type="string" Value="[INSTALLFOLDER]" KeyPath="yes" />
-      <RemoveFolder Id="RemoveInstallFolder" On="uninstall" />
-      <RemoveFolder Id="RemoveUserProgramsFolder" Directory="UserProgramsFolder" On="uninstall" />
-    </Component>
+    <!-- Per-user components need a registry key path (ICE38), must
+         remove the folders they create (ICE64), and each auto-GUID
+         component may contain at most one file/registry keypath (WIX0230). -->
+    <ComponentGroup Id="ProgramFiles" Directory="INSTALLFOLDER">
+      <Component Id="InstallFolderRegistry">
+        <RegistryValue Root="HKCU" Key="Software\Trackz" Name="InstallFolder" Type="string" Value="[INSTALLFOLDER]" KeyPath="yes" />
+        <RemoveFolder Id="RemoveInstallFolder" On="uninstall" />
+        <RemoveFolder Id="RemoveUserProgramsFolder" Directory="UserProgramsFolder" On="uninstall" />
+      </Component>
+
+      <Component Id="TrackzExeComponent">
+        <File Id="TrackzExe" Source="$(var.BinDir)\trackz.exe" />
+        <RegistryValue Root="HKCU" Key="Software\Trackz\Components" Name="TrackzExe" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+
+      <Component Id="TrackzVizExeComponent">
+        <File Id="TrackzVizExe" Source="$(var.BinDir)\trackz-viz.exe" />
+        <RegistryValue Root="HKCU" Key="Software\Trackz\Components" Name="TrackzVizExe" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+
+      <Component Id="LicenseTxtComponent">
+        <File Id="LicenseTxt" Source="$(var.RepoDir)\LICENSE" Name="LICENSE.txt" />
+        <RegistryValue Root="HKCU" Key="Software\Trackz\Components" Name="LicenseTxt" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
 
     <StandardDirectory Id="ProgramMenuFolder">
       <Component Id="StartMenuShortcut">
