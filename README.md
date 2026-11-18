@@ -1,7 +1,6 @@
 ## [Trackz](https://github.com/solworktech/trackz) - Monitor time spent in apps/windows
 
-[![CI](https://github.com/solworktech/trackz/actions/workflows/ci.yaml/badge.svg)](https://github.com/solworktech/trackz/actions/workflows/ci.yaml)
-[![coverage](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fsolworktech%2Ftrackz%2Fbadges%2Fcoverage.json)](https://github.com/solworktech/trackz/blob/badges/coverage.md)
+[![CI](https://github.com/solworktech/trackz/actions/workflows/ci.yml/badge.svg)](https://github.com/solworktech/trackz/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/solworktech/trackz.svg)](https://pkg.go.dev/github.com/solworktech/trackz)
 [![License][badge-license]][license]
 
