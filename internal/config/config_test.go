@@ -3,15 +3,18 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"testing"
 	"time"
+
+	"github.com/solworktech/trackz/internal/titles"
 )
 
 func TestLoadSave(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "sub", "config.json")
 	cfg, err := Load(path)
-	if err != nil || cfg != Default() {
+	if err != nil || !reflect.DeepEqual(cfg, Default()) {
 		t.Fatalf("missing file should give defaults: %+v %v", cfg, err)
 	}
 	cfg.TimeZone = "Asia/Tokyo"
@@ -20,7 +23,7 @@ func TestLoadSave(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := Load(path)
-	if err != nil || got != cfg {
+	if err != nil || !reflect.DeepEqual(got, cfg) {
 		t.Fatalf("round trip: %+v %v", got, err)
 	}
 	if got.FormatDate(time.Date(2025, 1, 1, 20, 0, 0, 0, time.UTC)) != "02/01/2025" {
@@ -120,5 +123,26 @@ func TestDefaultDBPathFollowsConfigDir(t *testing.T) {
 	t.Setenv(EnvDB, "/env.db")
 	if got := mustResolve(t, "", Config{DBPath: "/cfg.db"}); got != "/env.db" {
 		t.Errorf("TRACKZ_DB must win over db_path: %q", got)
+	}
+}
+
+func TestTitleRules(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(`{"merge_titles":false,"title_rules":[{"pattern":"(bad"}]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MergeTitles || !reflect.DeepEqual(cfg.TitleRules, Default().TitleRules) {
+		t.Errorf("an invalid rule should fall back to the defaults: %+v", cfg)
+	}
+	if !Default().MergeTitles {
+		t.Error("merging is on by default")
+	}
+	cfg.TitleRules = []titles.Rule{{Pattern: "("}}
+	if cfg.Validate() == nil {
+		t.Error("Validate must reject an invalid rule")
 	}
 }

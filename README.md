@@ -185,7 +185,9 @@ $ trackz-viz            # or: trackz-viz -db /path/to/trackz.db
 - **Set Status**: records time away from the computer's normal use. Pick *Out to lunch*, *Meeting*, *Coffee break*,
   *Phone call*, *Away from desk*, *Errand* or type another status, then *Start Now*: a record with `trackz-viz` as the
   application (`app_name`), the status as the window title (`window_name`) and `trackz-status` as `process_name` is
-  started, and an *I'm back* box stays up until you click it or press Enter, which ends the record. The tray menu
+  started, and an *I'm back* box stays up until you click it or press Enter, which ends the record. Charts show
+  statuses with an icon for their kind (lunch, meeting, coffee, phone, errand, away, or an hourglass for others,
+  chosen from words in the status), and `trackz-viz` with the Trackz logo. The tray menu
   also offers *I'm back* meanwhile. The time within a status counts for the status only: reports leave it out of the
   window that had focus meanwhile (usually `trackz-viz` itself) and of screen-lock periods. Quitting `trackz-viz`
   ends the status; if `trackz-viz` was killed, the box comes back at its next start.
@@ -207,6 +209,16 @@ $ trackz-viz            # or: trackz-viz -db /path/to/trackz.db
   ORDER BY duration DESC
   LIMIT 20
   ```
+  `norm_title(window_name)` applies the title rules (see *Merged titles*), so `SELECT norm_title(window_name) AS
+  label, ... GROUP BY process_name, label` groups titles the way the dashboard does.
+- **Merged titles**: web apps put notification counts in the title (`(3) YouTube`, `Inbox (12) - … - Gmail`,
+  `(5) Feed | LinkedIn`). Reports add such titles up as one entry (the tooltip says how many titles were merged);
+  the recorded titles are not changed. The rules are regular expressions, applied in order, editable in Settings
+  (one per line, `regular expression => replacement`, with a box to try a title) and stored as `title_rules` in
+  `config.json`; `merge_titles: false` turns merging off. The defaults remove a count at the start (`(3)`, `(12+)`,
+  `[2]`), an unread marker at the start (`*`, `•`), and a count after Inbox, Chat, Messages, Notifications, Unread,
+  Feed or Mentions, but leave other numbers alone (`report (1).pdf` stays as it is). The title filter matches titles as
+  shown, i.e. after merging.
 - **Saved queries**: *Save query* stores the query under a name, as `<name>.sql` in the `saved_queries` directory next
   to the config file (`~/.config/trackz/saved_queries` on Linux/BSD,
   `~/Library/Application Support/trackz/saved_queries` on macOS, `%AppData%\trackz\saved_queries` on Windows). The
@@ -231,8 +243,8 @@ $ trackz-viz            # or: trackz-viz -db /path/to/trackz.db
 - **Settings**: appearance, refresh interval, display time zone, date and time formats (strftime-style, e.g. `%d/%m/%Y`), dashboard rows and the
   minimum total for an entry to be listed: windows or applications with less than 120 seconds in the period are hidden
   from the dashboard and the app charts by default. Unlike the original viewer, which dropped every *record* shorter
-  than 120 seconds, short visits still count: ten 20-second visits to a window make a 200-second entry, and daily
-  statistics include everything.
+  than 120 seconds, short visits still count: ten 20-second visits to a window make a 200-second entry. Also in
+  Settings: merging titles and its rules (see *Merged titles*).
 
 Settings are stored in `config.json` in the same directory as the default database: `$XDG_CONFIG_HOME/trackz/` or
 `~/.config/trackz/` (Linux/BSD), `~/Library/Application Support/trackz/` (macOS), `%APPDATA%\trackz\` (Windows).

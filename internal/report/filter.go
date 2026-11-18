@@ -34,13 +34,14 @@ func (f Filter) Key() string {
 	return strings.ToLower(strings.TrimSpace(f.TitleContains)) + "\x00" + strings.Join(apps, "\x00")
 }
 
-// Match reports whether r passes the filter.
-func (f Filter) Match(r store.Record) bool {
+// match reports whether r passes the filter, matching the title against
+// title(r.WindowName) (the title as reports show it).
+func (f Filter) match(r store.Record, title func(string) string) bool {
 	if f.Excludes(r.AppName) {
 		return false
 	}
 	t := strings.TrimSpace(f.TitleContains)
-	return t == "" || strings.Contains(strings.ToLower(r.WindowName), strings.ToLower(t))
+	return t == "" || strings.Contains(strings.ToLower(title(r.WindowName)), strings.ToLower(t))
 }
 
 // Describe summarises the filter for display, e.g.
@@ -64,13 +65,13 @@ func (f Filter) Describe() string {
 	return strings.Join(parts, " · ")
 }
 
-func (f Filter) apply(recs []store.Record) []store.Record {
+func (f Filter) apply(recs []store.Record, title func(string) string) []store.Record {
 	if !f.Active() {
 		return recs
 	}
 	kept := recs[:0]
 	for _, r := range recs {
-		if f.Match(r) {
+		if f.match(r, title) {
 			kept = append(kept, r)
 		}
 	}

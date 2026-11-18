@@ -118,7 +118,7 @@ func (pc *pieChart) pie(gtx C, th *material.Theme, ic *iconCache, s report.Serie
 		sweep := p.Value / total * 2 * math.Pi
 		mid := start + sweep/2
 		start += sweep
-		icon := ic.get(p.Process, p.App)
+		icon := ic.get(p)
 		if icon == nil {
 			continue
 		}
@@ -132,7 +132,10 @@ func (pc *pieChart) pie(gtx C, th *material.Theme, ic *iconCache, s report.Serie
 		if p.Process != "" && p.Process != p.Label {
 			lines = append(lines, p.Process)
 		}
-		tooltip(gtx, th, pc.hover.pos, size, ic.get(p.Process, p.App), lines...)
+		if p.Detail != "" {
+			lines = append(lines, p.Detail)
+		}
+		tooltip(gtx, th, pc.hover.pos, size, ic.get(p), lines...)
 	}
 	return D{Size: size}
 }
@@ -204,7 +207,7 @@ func (pc *pieChart) legendList(gtx C, th *material.Theme, ic *iconCache, s repor
 				}),
 				layout.Rigid(func(gtx C) D {
 					return layout.Inset{Right: 6}.Layout(gtx, func(gtx C) D {
-						return layoutIcon(gtx, ic.get(p.Process, p.App), 18)
+						return layoutIcon(gtx, ic.get(p), 18)
 					})
 				}),
 				layout.Flexed(1, func(gtx C) D { return truncLabel(gtx, th, 13, cs.fg, p.Label) }),
@@ -241,7 +244,7 @@ func (bc *barChart) layout(gtx C, th *material.Theme, ic *iconCache, s report.Se
 			return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 				layout.Rigid(func(gtx C) D {
 					return layout.Inset{Right: 6}.Layout(gtx, func(gtx C) D {
-						return layoutIcon(gtx, ic.get(p.Process, p.App), 20)
+						return layoutIcon(gtx, ic.get(p), 20)
 					})
 				}),
 				layout.Rigid(func(gtx C) D {

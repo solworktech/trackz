@@ -11,11 +11,13 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 	_ "time/tzdata" // IANA zones on systems without a zoneinfo database (Windows)
 
 	"github.com/solworktech/trackz/internal/timefmt"
+	"github.com/solworktech/trackz/internal/titles"
 )
 
 const (
@@ -63,6 +65,13 @@ type Config struct {
 	// RefreshMinutes is how often views that include the present are
 	// refreshed automatically; 0 disables automatic refresh.
 	RefreshMinutes int `json:"refresh_minutes"`
+	// MergeTitles makes reports add up window titles that differ only in
+	// what TitleRules remove (notification counts such as "(3) YouTube").
+	// Recorded titles are not changed.
+	MergeTitles bool `json:"merge_titles"`
+	// TitleRules are applied in order to normalise titles (see package
+	// titles); they default to titles.DefaultRules.
+	TitleRules []titles.Rule `json:"title_rules"`
 }
 
 // Default returns the built-in defaults.
@@ -75,6 +84,8 @@ func Default() Config {
 		MinDurationSeconds: DefaultMinDuration,
 		Theme:              ThemeSystem,
 		RefreshMinutes:     DefaultRefreshMinutes,
+		MergeTitles:        true,
+		TitleRules:         slices.Clone(titles.DefaultRules),
 	}
 }
 
@@ -104,6 +115,9 @@ func (c Config) Validate() error {
 	}
 	if c.RefreshMinutes < 0 || c.RefreshMinutes > 24*60 {
 		return fmt.Errorf("refresh interval must be between 0 (off) and 1440 minutes")
+	}
+	if _, err := titles.New(c.TitleRules); err != nil {
+		return err
 	}
 	return nil
 }
@@ -189,6 +203,9 @@ func Load(path string) (Config, error) {
 	}
 	if cfg.RefreshMinutes < 0 || cfg.RefreshMinutes > 24*60 {
 		cfg.RefreshMinutes = def.RefreshMinutes
+	}
+	if _, err := titles.New(cfg.TitleRules); err != nil {
+		cfg.TitleRules = def.TitleRules
 	}
 	return cfg, nil
 }

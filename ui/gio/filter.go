@@ -58,7 +58,7 @@ func (u *UI) openFilterDialog() {
 		defer cancel()
 		pts, err := u.svc.Apps(ctx, rng)
 		for _, p := range pts {
-			u.icons.prefetch(p.Process, p.App)
+			u.icons.prefetch(p)
 		}
 		apps := make([]filterApp, 0, len(pts))
 		for _, p := range pts {
@@ -250,7 +250,7 @@ func (u *UI) filterAppRow(gtx C, a *filterApp) D {
 			return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 				layout.Rigid(func(gtx C) D { return checkBox(gtx, a.shown.Value) }),
 				layout.Rigid(layout.Spacer{Width: 8}.Layout),
-				layout.Rigid(func(gtx C) D { return layoutIcon(gtx, u.icons.get(a.Process, a.App), 18) }),
+				layout.Rigid(func(gtx C) D { return layoutIcon(gtx, u.icons.get(a.Point), 18) }),
 				layout.Rigid(layout.Spacer{Width: 8}.Layout),
 				layout.Flexed(1, func(gtx C) D {
 					col := cs.fg

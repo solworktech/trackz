@@ -19,6 +19,7 @@ import (
 
 	"github.com/solworktech/trackz/internal/assets"
 	"github.com/solworktech/trackz/internal/icons"
+	"github.com/solworktech/trackz/internal/report"
 )
 
 type (
@@ -124,21 +125,32 @@ func newIconCache() *iconCache {
 	return &iconCache{res: icons.New(32), ops: map[string]*paint.ImageOp{}}
 }
 
-// prefetch resolves icons ahead of drawing (call from a goroutine).
-func (c *iconCache) prefetch(process, app string) {
-	c.get(process, app)
-}
+// prefetch resolves the icon of p ahead of drawing (call from a goroutine).
+func (c *iconCache) prefetch(p report.Point) { c.get(p) }
 
-func (c *iconCache) get(process, app string) *paint.ImageOp {
-	key := process + "\x00" + app
+// get returns the icon for p, or nil. Status entries get an icon for the
+// kind of status; trackz-viz itself (whose app name also covers the
+// statuses, in per-application views) gets the Trackz logo. Other
+// applications' icons come from the platform (see package icons).
+func (c *iconCache) get(p report.Point) *paint.ImageOp {
+	var key string
+	var lookup func() image.Image
+	switch {
+	case p.IsStatus():
+		name := assets.StatusIconName(p.Label)
+		key, lookup = "\x00status\x00"+name, func() image.Image { return assets.StatusIcon(p.Label, 32) }
+	case p.App == report.StatusApp:
+		key, lookup = "\x00trackz", func() image.Image { return assets.Icon(32) }
+	default:
+		key, lookup = p.Process+"\x00"+p.App, func() image.Image { return c.res.Icon(p.Process, p.App) }
+	}
 	c.mu.Lock()
 	op, ok := c.ops[key]
 	c.mu.Unlock()
 	if ok {
 		return op
 	}
-	img := c.res.Icon(process, app)
-	if img != nil {
+	if img := lookup(); img != nil {
 		o := paint.NewImageOp(img)
 		op = &o
 	}

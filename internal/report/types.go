@@ -37,6 +37,14 @@ type Point struct {
 	Detail string
 }
 
+// StatusApp is the application name of status entries (and of trackz-viz
+// itself).
+const StatusApp = store.StatusAppName
+
+// IsStatus reports whether p is a status set with "Set Status" (as a
+// window-level entry: its Label is the status).
+func (p Point) IsStatus() bool { return p.Process == store.StatusProcessName && p.Label != p.App }
+
 // Series is an ordered list of points.
 type Series struct {
 	Title  string

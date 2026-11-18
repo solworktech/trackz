@@ -26,6 +26,7 @@ import (
 	"github.com/solworktech/trackz/internal/store"
 	"github.com/solworktech/trackz/internal/systheme"
 	"github.com/solworktech/trackz/internal/timefmt"
+	"github.com/solworktech/trackz/internal/titles"
 	"github.com/solworktech/trackz/internal/tray"
 )
 
@@ -113,6 +114,9 @@ type settingsForm struct {
 	tz, dateFmt, timeFmt, rows, minDur widget.Editor
 	refresh                            widget.Editor
 	theme                              widget.Enum
+	mergeTitles                        widget.Bool
+	titleRules, titleTest              widget.Editor
+	defaultRules                       widget.Clickable
 	save, reset                        widget.Clickable
 	list                               widget.List
 	loaded                             bool
@@ -150,7 +154,7 @@ func New(svc *report.Service, opts ...app.Option) *UI {
 	today := svc.Today()
 	u.customFrom, u.customTo = today.AddDays(-6), today
 	u.settings.theme.Value = svc.Config().Theme
-	for _, e := range []*widget.Editor{&u.settings.tz, &u.settings.dateFmt, &u.settings.timeFmt, &u.settings.rows, &u.settings.minDur, &u.settings.refresh} {
+	for _, e := range []*widget.Editor{&u.settings.tz, &u.settings.dateFmt, &u.settings.timeFmt, &u.settings.rows, &u.settings.minDur, &u.settings.refresh, &u.settings.titleTest} {
 		e.SingleLine = true
 	}
 	u.setExportDefault()
@@ -305,7 +309,7 @@ func (u *UI) ensure(force bool) {
 		res, err := u.svc.Run(ctx, v, rng, filter)
 		if res != nil {
 			for _, p := range res.Series.Points {
-				u.icons.prefetch(p.Process, p.App)
+				u.icons.prefetch(p)
 			}
 		}
 		u.mu.Lock()
@@ -468,7 +472,7 @@ func (u *UI) runCustom() {
 		if t != nil {
 			if s, err := report.SeriesFromTable(t); err == nil {
 				for _, p := range s.Points {
-					u.icons.prefetch(p.Process, p.App)
+					u.icons.prefetch(p)
 				}
 			}
 		}
@@ -573,7 +577,7 @@ func (u *UI) layoutTabs(gtx C) D {
 		}
 		children = append(children,
 			layout.Flexed(1, func(gtx C) D { return D{Size: image.Pt(gtx.Constraints.Min.X, 0)} }),
-			layout.Rigid(func(gtx C) D { return smallButton(gtx, u.th, &u.statusBtn, "Set Status") }),
+			layout.Rigid(func(gtx C) D { return smallButton(gtx, u.th, &u.statusBtn, "Set Away Status") }),
 		)
 		return layout.Flex{Alignment: layout.Middle}.Layout(gtx, children...)
 	})
@@ -853,6 +857,8 @@ func (u *UI) loadSettings() {
 	u.settings.minDur.SetText(strconv.Itoa(cfg.MinDurationSeconds))
 	u.settings.refresh.SetText(strconv.Itoa(cfg.RefreshMinutes))
 	u.settings.theme.Value = cfg.Theme
+	u.settings.mergeTitles.Value = cfg.MergeTitles
+	u.settings.titleRules.SetText(titles.Format(cfg.TitleRules))
 	u.settings.loaded = true
 }
 
@@ -872,6 +878,10 @@ func (u *UI) formSettings() (config.Config, error) {
 		return cfg, fmt.Errorf("refresh interval must be a number of minutes")
 	}
 	cfg.Theme = u.settings.theme.Value
+	cfg.MergeTitles = u.settings.mergeTitles.Value
+	if cfg.TitleRules, err = titles.Parse(u.settings.titleRules.Text()); err != nil {
+		return cfg, fmt.Errorf("title rules, %w", err)
+	}
 	return cfg, cfg.Validate()
 }
 
@@ -882,6 +892,9 @@ func (u *UI) layoutSettings(gtx C) D {
 	}
 	if s.reset.Clicked(gtx) {
 		u.loadSettings()
+	}
+	if s.defaultRules.Clicked(gtx) {
+		s.titleRules.SetText(titles.Format(titles.DefaultRules))
 	}
 	if s.save.Clicked(gtx) {
 		cfg, err := u.formSettings()
@@ -941,6 +954,7 @@ func (u *UI) layoutSettings(gtx C) D {
 		func(gtx C) D {
 			return field(gtx, u.th, "Hide entries totalling less than (seconds)", &s.minDur, "120", 120)
 		},
+		func(gtx C) D { return u.layoutTitleSettings(gtx) },
 		func(gtx C) D {
 			return layout.Flex{}.Layout(gtx,
 				layout.Rigid(func(gtx C) D { return smallButton(gtx, u.th, &s.save, "Save") }),
@@ -1000,4 +1014,67 @@ func (u *UI) layoutStatus(gtx C) D {
 	return layout.Inset{Left: 12, Right: 12, Bottom: 6, Top: 2}.Layout(gtx, func(gtx C) D {
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx, lines...)
 	})
+}
+
+// layoutTitleSettings is the part of Settings about merging window titles
+// that differ only in notification counts.
+func (u *UI) layoutTitleSettings(gtx C) D {
+	s := &u.settings
+	caption := func(txt string) layout.FlexChild {
+		return layout.Rigid(func(gtx C) D {
+			l := material.Caption(u.th, txt)
+			l.Color = cs.muted
+			return layout.Inset{Bottom: 4}.Layout(gtx, l.Layout)
+		})
+	}
+	// Live preview of the rules as typed.
+	preview := ""
+	if rules, err := titles.Parse(s.titleRules.Text()); err != nil {
+		preview = "Title rules, " + err.Error()
+	} else if n, err := titles.New(rules); err != nil {
+		preview = err.Error()
+	} else if in := s.titleTest.Text(); in != "" {
+		preview = "→ " + n.Normalize(in)
+	}
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		layout.Rigid(material.CheckBox(u.th, &s.mergeTitles,
+			"Merge window titles that differ only in notification counts, e.g. “(3) YouTube” and “YouTube”").Layout),
+		caption("Title rules, applied in order: one per line, “regular expression => replacement” (leave the replacement out to delete the match; # starts a comment). Recorded titles are not changed; custom queries can use norm_title(window_name)."),
+		layout.Rigid(func(gtx C) D {
+			gtx.Constraints.Max.X = min(gtx.Constraints.Max.X, gtx.Dp(720))
+			gtx.Constraints.Min.X = gtx.Constraints.Max.X
+			return bordered(gtx, func(gtx C) D {
+				return layout.UniformInset(8).Layout(gtx, func(gtx C) D {
+					e := material.Editor(u.th, &s.titleRules, "")
+					e.Font = monoFont
+					e.TextSize = 13
+					return e.Layout(gtx)
+				})
+			})
+		}),
+		layout.Rigid(layout.Spacer{Height: 6}.Layout),
+		layout.Rigid(func(gtx C) D {
+			return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+				layout.Rigid(func(gtx C) D { return segButton(gtx, u.th, &s.defaultRules, "Default rules", false) }),
+				layout.Rigid(layout.Spacer{Width: 12}.Layout),
+				layout.Rigid(func(gtx C) D {
+					gtx.Constraints.Max.X = gtx.Dp(320)
+					gtx.Constraints.Min.X = gtx.Constraints.Max.X
+					return bordered(gtx, func(gtx C) D {
+						return layout.UniformInset(7).Layout(gtx, material.Editor(u.th, &s.titleTest, "Try a title, e.g. (3) YouTube").Layout)
+					})
+				}),
+				layout.Flexed(1, func(gtx C) D {
+					l := material.Body2(u.th, preview)
+					if strings.HasPrefix(preview, "→") {
+						l.Color = cs.fg
+					} else {
+						l.Color = cs.err
+					}
+					l.MaxLines = 2
+					return layout.Inset{Left: 10}.Layout(gtx, l.Layout)
+				}),
+			)
+		}),
+	)
 }

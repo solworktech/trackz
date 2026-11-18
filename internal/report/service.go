@@ -16,6 +16,7 @@ import (
 	"github.com/solworktech/trackz/internal/queries"
 	"github.com/solworktech/trackz/internal/store"
 	"github.com/solworktech/trackz/internal/timefmt"
+	"github.com/solworktech/trackz/internal/titles"
 )
 
 // Service is the controller used by frontends. It is safe for concurrent
@@ -26,8 +27,9 @@ type Service struct {
 	configPath string
 	now        func() time.Time
 
-	mu  sync.RWMutex
-	cfg config.Config
+	mu     sync.RWMutex
+	cfg    config.Config
+	titles *titles.Normalizer // cfg.TitleRules, compiled
 }
 
 // Options configure Open.
@@ -64,9 +66,18 @@ func Open(ctx context.Context, opts Options) (*Service, error) {
 		_ = st.Close()
 		return nil, err
 	}
-	s := &Service{st: st, ro: ro, configPath: cfgPath, cfg: cfg, now: opts.Now}
+	s := &Service{st: st, ro: ro, configPath: cfgPath, now: opts.Now}
 	if s.now == nil {
 		s.now = time.Now
+	}
+	if err := s.setConfig(cfg); err != nil {
+		// Load falls back to the default rules for invalid ones, so this
+		// does not happen; keep going with the defaults if it does.
+		cfgErr = errors.Join(cfgErr, err)
+		cfg.TitleRules = config.Default().TitleRules
+		if err := s.setConfig(cfg); err != nil {
+			return nil, errors.Join(err, s.Close())
+		}
 	}
 	// A broken config file is not fatal: defaults are used and the error
 	// is reported so the frontend can show it.
@@ -103,10 +114,52 @@ func (s *Service) UpdateConfig(cfg config.Config) error {
 	if err := config.Save(s.configPath, cfg); err != nil {
 		return err
 	}
+	return s.setConfig(cfg)
+}
+
+// setConfig makes cfg current, with its title rules compiled.
+func (s *Service) setConfig(cfg config.Config) error {
+	n, err := titles.New(cfg.TitleRules)
+	if err != nil {
+		return err
+	}
 	s.mu.Lock()
-	s.cfg = cfg
+	s.cfg, s.titles = cfg, n
 	s.mu.Unlock()
+	store.SetTitleNormalizer(n)
 	return nil
+}
+
+// NormalizeTitle returns title as reports show it: with the title rules
+// applied when merging is on (config MergeTitles), else unchanged.
+func (s *Service) NormalizeTitle(title string) string {
+	s.mu.Lock()
+	n, merge := s.titles, s.cfg.MergeTitles
+	s.mu.Unlock()
+	if !merge {
+		return title
+	}
+	return n.Normalize(title)
+}
+
+// titleFunc returns NormalizeTitle with a cache, for one report: many
+// records share a title.
+func (s *Service) titleFunc() func(string) string {
+	s.mu.Lock()
+	n, merge := s.titles, s.cfg.MergeTitles
+	s.mu.Unlock()
+	if !merge {
+		return func(t string) string { return t }
+	}
+	seen := map[string]string{}
+	return func(t string) string {
+		out, ok := seen[t]
+		if !ok {
+			out = n.Normalize(t)
+			seen[t] = out
+		}
+		return out
+	}
 }
 
 // Location returns the display time zone.
@@ -134,7 +187,7 @@ func (s *Service) records(ctx context.Context, r Range, f Filter) ([]store.Recor
 	if err != nil {
 		return nil, err
 	}
-	return f.apply(clipStatuses(recs)), nil
+	return f.apply(clipStatuses(recs), s.titleFunc()), nil
 }
 
 // Apps returns the applications with focus time in r (ignoring any
@@ -186,22 +239,30 @@ func (s *Service) Dashboard(ctx context.Context, r Range, f Filter, limit int) (
 	if err != nil {
 		return nil, err
 	}
+	title := s.titleFunc()
 	type key struct{ proc, window string }
 	totals := map[key]*Point{}
+	variants := map[key]map[string]bool{} // recorded titles merged into each
 	var order []key
 	for _, rec := range recs {
-		k := key{rec.ProcessName, rec.WindowName}
+		k := key{rec.ProcessName, title(rec.WindowName)}
 		p := totals[k]
 		if p == nil {
-			p = &Point{Label: rec.WindowName, Process: rec.ProcessName, App: rec.AppName}
+			p = &Point{Label: k.window, Process: rec.ProcessName, App: rec.AppName}
 			totals[k] = p
+			variants[k] = map[string]bool{}
 			order = append(order, k)
 		}
 		p.Value += float64(rec.Duration())
+		variants[k][rec.WindowName] = true
 	}
 	pts := make([]Point, 0, len(order))
 	for _, k := range order {
-		pts = append(pts, *totals[k])
+		p := *totals[k]
+		if n := len(variants[k]); n > 1 {
+			p.Detail = fmt.Sprintf("merged from %d titles", n)
+		}
+		pts = append(pts, p)
 	}
 	pts, hidden := s.dropSmall(pts)
 	pts = topN(pts, limit)
