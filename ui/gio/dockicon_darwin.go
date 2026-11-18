@@ -20,8 +20,6 @@ static void trackz_set_dock_icon(const void *data, int len) {
 import "C"
 
 import (
-	"unsafe"
-
 	"github.com/solworktech/trackz/internal/assets"
 )
 
