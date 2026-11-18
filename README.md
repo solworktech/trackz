@@ -228,7 +228,8 @@ $ trackz-viz            # or: trackz-viz -db /path/to/trackz.db
 - **Tray icon**: while `trackz-viz` runs, the Trackz logo sits in the system tray. Clicking it brings the window to
   the front (restoring it if minimised); its context menu has *Show Trackz* and *Quit*. With the tray icon shown,
   closing the window does not quit `trackz-viz`: the window goes away, the program keeps running in the tray, and a
-  click on the icon (or *Show Trackz*) opens the window again as you left it. Quit from the tray menu. Where no tray
+  click on the icon (or *Show Trackz*) opens the window again as you left it, with the same size, maximised or full
+  screen if it was. Quit from the tray menu. Where no tray
   icon can be shown, closing the window quits as usual.
 - **Single instance**: only one `trackz-viz` runs per user. Starting it again (from the menu, a launcher or a
   terminal) brings the running one to the front, reopening its window if it was closed to the tray, and exits. Linux/BSD use the

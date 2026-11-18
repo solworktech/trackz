@@ -34,6 +34,7 @@ import (
 type UI struct {
 	svc   *report.Service
 	opts  []app.Option               // for each new window
+	geom  windowGeometry             // of the last window, for the next
 	win   atomic.Pointer[app.Window] // nil while closed to the tray
 	th    *material.Theme
 	icons *iconCache
@@ -215,15 +216,27 @@ func (u *UI) Run() error {
 // runWindow creates a window and processes its events until it is closed.
 func (u *UI) runWindow() error {
 	w := new(app.Window)
-	w.Option(u.opts...)
+	w.Option(append(u.opts, u.geom.sizeOption()...)...)
 	u.win.Store(w)
+	// The mode (maximised, ...) is set once the window is shown: on X11
+	// the window manager then also knows its normal size.
+	pendingMode := u.geom.mode
 	defer u.win.Store(nil)
 	var ops op.Ops
 	for {
 		switch e := w.Event().(type) {
 		case app.DestroyEvent:
 			return e.Err
+		case app.ConfigEvent:
+			u.geom.update(e.Config.Size, platformWindowMode(e.Config.Mode))
 		case app.FrameEvent:
+			u.geom.metric = e.Metric
+			if pendingMode == app.Maximized || pendingMode == app.Fullscreen {
+				if !platformSetMode(pendingMode) {
+					w.Option(pendingMode.Option())
+				}
+			}
+			pendingMode = app.Windowed
 			gtx := app.NewContext(&ops, e)
 			u.layout(gtx)
 			e.Frame(gtx.Ops)
@@ -1077,4 +1090,38 @@ func (u *UI) layoutTitleSettings(gtx C) D {
 			)
 		}),
 	)
+}
+
+// windowGeometry remembers the size and mode (maximised, full screen) of
+// the window, so the window reopened from the tray looks as it was closed.
+type windowGeometry struct {
+	size   image.Point    // in the windowed mode, in pixels
+	mode   app.WindowMode // Windowed, Maximized or Fullscreen
+	metric unit.Metric    // of the last frame, to convert size to dp
+	known  bool
+}
+
+func (g *windowGeometry) update(size image.Point, mode app.WindowMode) {
+	switch mode {
+	case app.Windowed:
+		if size.X > 0 && size.Y > 0 {
+			g.size, g.known = size, true
+		}
+		g.mode = app.Windowed
+	case app.Maximized, app.Fullscreen:
+		g.mode = mode
+	} // Minimized: keep what it was before
+}
+
+// sizeOption returns the option restoring the windowed size (none before
+// the first window has reported it). It applies to a maximised window too,
+// so un-maximising it goes back to that size.
+func (g *windowGeometry) sizeOption() []app.Option {
+	if !g.known || g.metric.PxPerDp <= 0 {
+		return nil
+	}
+	return []app.Option{app.Size(
+		unit.Dp(float32(g.size.X)/g.metric.PxPerDp),
+		unit.Dp(float32(g.size.Y)/g.metric.PxPerDp),
+	)}
 }
