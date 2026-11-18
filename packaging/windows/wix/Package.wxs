@@ -44,8 +44,8 @@
     </Feature>
 
     <!-- Per-user components need a registry key path (ICE38), must
-         remove the folders they create (ICE64), and each auto-GUID
-         component may contain at most one file/registry keypath (WIX0230). -->
+         remove the folders they create (ICE64), and components that
+         combine a File with a RegistryValue keypath require explicit GUIDs (WIX0230). -->
     <ComponentGroup Id="ProgramFiles" Directory="INSTALLFOLDER">
       <Component Id="InstallFolderRegistry">
         <RegistryValue Root="HKCU" Key="Software\Trackz" Name="InstallFolder" Type="string" Value="[INSTALLFOLDER]" KeyPath="yes" />
@@ -53,17 +53,17 @@
         <RemoveFolder Id="RemoveUserProgramsFolder" Directory="UserProgramsFolder" On="uninstall" />
       </Component>
 
-      <Component Id="TrackzExeComponent">
+      <Component Id="TrackzExeComponent" Guid="8E4A6F12-3B9C-4D7E-9A15-2C8F0E6D4B31">
         <File Id="TrackzExe" Source="$(var.BinDir)\trackz.exe" />
         <RegistryValue Root="HKCU" Key="Software\Trackz\Components" Name="TrackzExe" Type="integer" Value="1" KeyPath="yes" />
       </Component>
 
-      <Component Id="TrackzVizExeComponent">
+      <Component Id="TrackzVizExeComponent" Guid="3D7B9E24-6A1F-4C8D-8B52-9E1A7C4F2D60">
         <File Id="TrackzVizExe" Source="$(var.BinDir)\trackz-viz.exe" />
         <RegistryValue Root="HKCU" Key="Software\Trackz\Components" Name="TrackzVizExe" Type="integer" Value="1" KeyPath="yes" />
       </Component>
 
-      <Component Id="LicenseTxtComponent">
+      <Component Id="LicenseTxtComponent" Guid="5F1C8A36-9D2E-4B7A-A643-7D8E1B9C5F42">
         <File Id="LicenseTxt" Source="$(var.RepoDir)\LICENSE" Name="LICENSE.txt" />
         <RegistryValue Root="HKCU" Key="Software\Trackz\Components" Name="LicenseTxt" Type="integer" Value="1" KeyPath="yes" />
       </Component>
