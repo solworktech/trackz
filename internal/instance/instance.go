@@ -67,6 +67,9 @@ func Start(name string, onRequest func(Request)) (*Instance, error) {
 		return nil, err
 	}
 	base := filepath.Join(dir, name)
+	if err := checkSocketPath(base + ".sock"); err != nil {
+		return nil, err
+	}
 	lock, err := lockfile.Acquire(base + ".lock")
 	if errors.Is(err, lockfile.ErrLocked) {
 		if err := send(base+".sock", Activate); err != nil {
@@ -113,6 +116,18 @@ func Send(name string, req Request) error {
 		return ErrNotRunning
 	}
 	return send(filepath.Join(dir, name)+".sock", req)
+}
+
+// maxSocketPath is the longest Unix-domain socket path every platform
+// accepts: sockaddr_un holds 104 bytes on macOS and the BSDs (108 on
+// Linux), including the terminating NUL.
+const maxSocketPath = 103
+
+func checkSocketPath(p string) error {
+	if len(p) > maxSocketPath {
+		return fmt.Errorf("socket path %s is too long for a Unix socket (%d > %d characters)", p, len(p), maxSocketPath)
+	}
+	return nil
 }
 
 // Running reports whether a copy of name is running.
