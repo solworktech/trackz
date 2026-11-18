@@ -15,8 +15,8 @@ func TestHelperRunning(t *testing.T) {
 	if os.Getenv(helperEnv) == "" {
 		t.Skip("helper")
 	}
-	if _, err := Start("trackz-test", func() {
-		if _, err := os.Stdout.WriteString("activated\n"); err != nil {
+	if _, err := Start("trackz-test", func(req Request) {
+		if _, err := os.Stdout.WriteString(string(req) + "\n"); err != nil {
 			os.Exit(4)
 		}
 	}); err != nil {
@@ -84,10 +84,17 @@ func TestSecondCopyActivatesFirst(t *testing.T) {
 	if _, err := Start("trackz-test", nil); !errors.Is(err, ErrRunning) {
 		t.Fatalf("second copy: got %v, want ErrRunning", err)
 	}
-	expect("activated\n")
+	expect("activate\n")
+	if err := Send("trackz-test", Quit); err != nil {
+		t.Fatalf("send quit: %v", err)
+	}
+	expect("quit\n")
 
 	// Once the first copy is gone (killed: no clean-up), a new one starts.
 	kill()
+	if err := Send("trackz-test", Quit); !errors.Is(err, ErrNotRunning) {
+		t.Errorf("send with none running: %v", err)
+	}
 	in, err := Start("trackz-test", nil)
 	if err != nil {
 		t.Fatalf("after the first copy died: %v", err)

@@ -2,6 +2,8 @@
 // copy started while the first runs asks the first to activate itself
 // (e.g. show its window) and is told to exit.
 //
+// Send passes other requests, such as Quit, to the running copy.
+//
 // The first copy holds an OS lock on <dir>/<name>.lock, released by the OS
 // even if the process is killed, and listens on the Unix-domain socket
 // <dir>/<name>.sock (supported on Windows 10 1803 and later). <dir> is
@@ -27,6 +29,19 @@ import (
 // been asked to activate.
 var ErrRunning = errors.New("already running")
 
+// ErrNotRunning is returned by Send when no copy is running.
+var ErrNotRunning = errors.New("not running")
+
+// Request is what a later copy (or Send) asks of the running one.
+type Request string
+
+const (
+	// Activate asks the running copy to show itself.
+	Activate Request = "activate"
+	// Quit asks the running copy to exit.
+	Quit Request = "quit"
+)
+
 // Instance is the running copy.
 type Instance struct {
 	lock     *lockfile.Lock
@@ -35,18 +50,18 @@ type Instance struct {
 }
 
 const (
-	request = "activate\n"
-	reply   = "ok\n"
+	reply = "ok\n"
 	// How long a second copy keeps trying to reach the first, which may
 	// still be starting (it holds the lock before it listens).
 	dialTimeout = 3 * time.Second
 	ioTimeout   = 2 * time.Second
 )
 
-// Start makes this process the running copy of name, calling onActivate
-// (from another goroutine) whenever a later copy starts. If another copy
-// is already running, it asks it to activate and returns ErrRunning.
-func Start(name string, onActivate func()) (*Instance, error) {
+// Start makes this process the running copy of name, calling onRequest
+// (from another goroutine) with Activate whenever a later copy starts, and
+// with whatever Send asks. If another copy is already running, it asks it
+// to activate and returns ErrRunning.
+func Start(name string, onRequest func(Request)) (*Instance, error) {
 	dir, err := runtimeDir(name)
 	if err != nil {
 		return nil, err
@@ -54,7 +69,7 @@ func Start(name string, onActivate func()) (*Instance, error) {
 	base := filepath.Join(dir, name)
 	lock, err := lockfile.Acquire(base + ".lock")
 	if errors.Is(err, lockfile.ErrLocked) {
-		if err := activate(base + ".sock"); err != nil {
+		if err := send(base+".sock", Activate); err != nil {
 			return nil, fmt.Errorf("%s is running but did not respond: %w", name, err)
 		}
 		return nil, ErrRunning
@@ -73,7 +88,7 @@ func Start(name string, onActivate func()) (*Instance, error) {
 		return nil, errors.Join(err, lock.Release())
 	}
 	in.ln = ln
-	go in.serve(onActivate)
+	go in.serve(onRequest)
 	return in, nil
 }
 
@@ -83,7 +98,34 @@ func (in *Instance) Close() error {
 	return errors.Join(err, in.lock.Release())
 }
 
-func (in *Instance) serve(onActivate func()) {
+// Send asks the running copy of name to carry out req. It returns
+// ErrNotRunning if there is none.
+func Send(name string, req Request) error {
+	dir, err := runtimeDir(name)
+	if err != nil {
+		return err
+	}
+	held, err := Running(name)
+	if err != nil {
+		return err
+	}
+	if !held {
+		return ErrNotRunning
+	}
+	return send(filepath.Join(dir, name)+".sock", req)
+}
+
+// Running reports whether a copy of name is running.
+func Running(name string) (bool, error) {
+	dir, err := runtimeDir(name)
+	if err != nil {
+		return false, err
+	}
+	held, _, err := lockfile.Held(filepath.Join(dir, name) + ".lock")
+	return held, err
+}
+
+func (in *Instance) serve(onRequest func(Request)) {
 	for {
 		conn, err := in.ln.Accept()
 		if errors.Is(err, net.ErrClosed) {
@@ -94,45 +136,49 @@ func (in *Instance) serve(onActivate func()) {
 			time.Sleep(100 * time.Millisecond) // don't spin on a persistent error
 			continue
 		}
-		if err := handle(conn); err != nil {
+		req, err := handle(conn)
+		if err != nil {
 			log.Printf("instance: %v", err)
 			continue
 		}
-		if onActivate != nil {
-			onActivate()
+		if onRequest != nil {
+			onRequest(req)
 		}
 	}
 }
 
-// handle reads one activation request and confirms it.
-func handle(conn net.Conn) (err error) {
+// handle reads one request and confirms it.
+func handle(conn net.Conn) (req Request, err error) {
 	defer func() {
 		if cerr := conn.Close(); cerr != nil && err == nil {
 			err = cerr
 		}
 	}()
 	if err := conn.SetDeadline(time.Now().Add(ioTimeout)); err != nil {
-		return err
+		return "", err
 	}
 	line, err := bufio.NewReader(conn).ReadString('\n')
 	if err != nil {
-		return fmt.Errorf("read request: %w", err)
+		return "", fmt.Errorf("read request: %w", err)
 	}
-	if line != request {
-		return fmt.Errorf("unexpected request %q", strings.TrimSpace(line))
+	req = Request(strings.TrimSuffix(line, "\n"))
+	if req != Activate && req != Quit {
+		return "", fmt.Errorf("unexpected request %q", req)
 	}
 	if _, err := conn.Write([]byte(reply)); err != nil {
-		return fmt.Errorf("reply: %w", err)
+		return "", fmt.Errorf("reply: %w", err)
 	}
-	return nil
+	return req, nil
 }
 
-// activate asks the running copy listening on sock to activate.
-func activate(sock string) error {
-	allowForeground()
+// send asks the running copy listening on sock to carry out req.
+func send(sock string, req Request) error {
+	if req == Activate {
+		allowForeground()
+	}
 	deadline := time.Now().Add(dialTimeout)
 	for {
-		err := ask(sock)
+		err := ask(sock, req)
 		if err == nil {
 			return nil
 		}
@@ -143,7 +189,7 @@ func activate(sock string) error {
 	}
 }
 
-func ask(sock string) (err error) {
+func ask(sock string, req Request) (err error) {
 	conn, err := net.DialTimeout("unix", sock, ioTimeout)
 	if err != nil {
 		return err
@@ -156,7 +202,7 @@ func ask(sock string) (err error) {
 	if err := conn.SetDeadline(time.Now().Add(ioTimeout)); err != nil {
 		return err
 	}
-	if _, err := conn.Write([]byte(request)); err != nil {
+	if _, err := conn.Write([]byte(string(req) + "\n")); err != nil {
 		return err
 	}
 	line, err := bufio.NewReader(conn).ReadString('\n')

@@ -1,4 +1,9 @@
-[Trackz](https://github.com/solworktech/trackz) - Monitor time spent in apps/windows
+## [Trackz](https://github.com/solworktech/trackz) - Monitor time spent in apps/windows
+
+[![CI](https://github.com/solworktech/trackz/actions/workflows/ci.yaml/badge.svg)](https://github.com/solworktech/trackz/actions/workflows/ci.yaml)
+[![coverage](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fsolworktech%2Ftrackz%2Fbadges%2Fcoverage.json)](https://github.com/solworktech/trackz/blob/badges/coverage.md)
+[![Go Reference](https://pkg.go.dev/badge/github.com/solworktech/trackz.svg)](https://pkg.go.dev/github.com/solworktech/trackz)
+[![License][badge-license]][license]
 
 ## Intended use
 
@@ -64,7 +69,7 @@ Notes:
   headers). On Debian/Ubuntu:
   ```sh
   # apt install gcc pkg-config libwnck-3-dev libgtk-3-dev \
-        libwayland-dev libx11-dev libx11-xcb-dev libxkbcommon-x11-dev libgles2-mesa-dev libegl1-mesa-dev \
+        libwayland-dev libx11-dev libx11-xcb-dev libxkbcommon-x11-dev libgles-dev libegl-dev \
         libffi-dev libxcursor-dev libvulkan-dev
   ```
   On FreeBSD: `pkg install go pkgconf libwnck3 gtk3`.
@@ -160,7 +165,33 @@ database, point their `TRACKZ_DB` at a shared file in a directory they can all w
 - **Any XDG desktop**: copy [packaging/xdg/trackz.desktop](./packaging/xdg/trackz.desktop) to
   `~/.config/autostart/` (or `/etc/xdg/autostart/` for all users).
 - **macOS**: see [packaging/launchd/org.solworktech.trackz.plist](./packaging/launchd/org.solworktech.trackz.plist).
-- **Windows**: `powershell -ExecutionPolicy Bypass -File packaging\windows\install-autostart.ps1 -Exe C:\path\to\trackz.exe`.
+- **Windows**: the installer (below) offers it; without the installer,
+  `powershell -ExecutionPolicy Bypass -File packaging\windows\install-autostart.ps1 -Exe C:\path\to\trackz.exe`.
+
+### Stopping
+
+`trackz stop` (with `-db` if `trackz run` had one) asks the `trackz` recording to that database to stop, and waits
+until it has closed the open record and released the database. On Unix it sends `SIGTERM` (which also works by hand,
+as do Ctrl-C, `SIGHUP` and `SIGQUIT`); on Windows, where there are no such signals, it sets an event `trackz` waits on.
+The systemd unit uses it as `ExecStop`. `trackz-viz -quit` likewise asks a running `trackz-viz` to quit, and waits.
+
+### Windows installer
+
+[packaging/windows/wix](./packaging/windows/wix) builds a per-user MSI with [WiX Toolset](https://wixtoolset.org) v5
+(the last version without the Open Source Maintenance Fee). One page shows the licence (AGPLv3), says the installation
+is for the current Windows account only, and offers the install folder (default `%LOCALAPPDATA%\Programs\Trackz`),
+*Start the Trackz recorder when I sign in to Windows* and *Start Trackz when setup finishes*. No administrator rights
+are needed. It adds a *Trackz* Start menu entry for `trackz-viz` and, if chosen, starts `trackz run` at sign-in
+(`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`). Upgrades and removal first run `trackz-viz -quit` and
+`trackz stop`, so no file is in use and the open record is closed. Uninstalling leaves the database and settings in
+`%APPDATA%\trackz`.
+
+The [windows-installer](./.github/workflows/windows-installer.yml) workflow builds x64 and ARM64 MSIs and attaches
+them to the release for a `v*` tag. By hand, on Windows with the .NET SDK and the executables in `bin`:
+```powershell
+PS> dotnet build packaging\windows\wix\Trackz.wixproj -c Release -p:Platform=x64 -p:TrackzVersion=1.2.3
+```
+The banner, side image and `License.rtf` are generated (`make icons`) from the logo and `LICENSE`.
 
 ## Visualisation: `trackz-viz`
 
@@ -255,7 +286,8 @@ Settings are stored in `config.json` in the same directory as the default databa
 
 The logo source is [internal/assets/logo.svg](./internal/assets/logo.svg). `make icons` regenerates everything derived
 from it: the PNGs embedded in `trackz-viz`, the hicolor icon theme files under `packaging/icons`, `packaging/windows/trackz.ico`
-and the Windows resource files `cmd/trackz-viz/rsrc_windows_*.syso`.
+and the Windows resource files `cmd/trackz-viz/rsrc_windows_*.syso`, plus the installer's images and `License.rtf`
+(from `LICENSE`).
 
 The window icon is set as follows: on X11 by `trackz-viz` itself (`_NET_WM_ICON`); on Wayland from the installed
 `trackz-viz.desktop` and `trackz` icon (`make install` installs both); on Windows from the embedded resources; on macOS
@@ -428,3 +460,6 @@ touching the logic:
 
 A new frontend calls `report.Open`, then `Service.Run(ctx, view, range)` or `Service.CustomQuery`, and renders the
 returned `report.Result`.
+
+[license]: ./LICENSE
+[badge-license]: https://img.shields.io/github/license/solworktech/trecs.svg

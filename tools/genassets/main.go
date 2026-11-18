@@ -10,6 +10,8 @@
 //	packaging/icons/hicolor/<size>/apps/trackz.png, .../scalable/apps/trackz.svg
 //	packaging/windows/trackz.ico
 //	cmd/trackz-viz/rsrc_windows_<arch>.syso   Windows window/taskbar icon
+//	packaging/windows/wix/{banner,dialog}.bmp  installer images
+//	packaging/windows/wix/License.rtf          LICENSE for the installer
 package main
 
 import (
@@ -69,7 +71,8 @@ func main() {
 		check(rs.WriteObject(f, arch))
 		check(f.Close())
 	}
-	log.Printf("icons generated from %s", svgPath)
+	writeInstallerAssets(*root, svg)
+	log.Printf("icons and installer images generated from %s", svgPath)
 }
 
 func render(svg []byte, size int) image.Image {

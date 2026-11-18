@@ -1,0 +1,81 @@
+---
+# Builds the per-user Windows installers (x64 and ARM64 MSIs) with WiX v5.
+# On a version tag (v1.2.3) they are attached to that GitHub release; on a
+# manual run they are only kept as workflow artifacts.
+name: Windows installer
+
+"on":
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write  # to attach the MSIs to the release
+
+jobs:
+  msi:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        include:
+          - goarch: amd64
+            platform: x64
+          - goarch: arm64
+            platform: arm64
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # tags, for the version
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Version
+        id: version
+        shell: pwsh
+        run: |
+          $full = git describe --tags --always
+          # MSI versions are numeric (major.minor.build): take them from the
+          # tag (v1.2.3-rc1 -> 1.2.3); untagged builds are 0.0.0.
+          $msi = '0.0.0'
+          if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -match '^v?(\d+\.\d+\.\d+)') { $msi = $Matches[1] }
+          "full=$full" >> $env:GITHUB_OUTPUT
+          "msi=$msi" >> $env:GITHUB_OUTPUT
+
+      - name: Build trackz and trackz-viz
+        shell: pwsh
+        env:
+          GOOS: windows
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: |
+          # -H=windowsgui: no console window (trackz starts at sign-in).
+          $ldflags = "-s -w -H=windowsgui -X github.com/solworktech/trackz/internal/version.Version=${{ steps.version.outputs.full }}"
+          go build -trimpath -ldflags $ldflags -o bin/trackz.exe ./cmd/trackz
+          go build -trimpath -ldflags $ldflags -o bin/trackz-viz.exe ./cmd/trackz-viz
+
+      - name: Build the MSI
+        shell: pwsh
+        run: >
+          dotnet build packaging/windows/wix/Trackz.wixproj -c Release
+          -p:Platform=${{ matrix.platform }}
+          -p:TrackzVersion=${{ steps.version.outputs.msi }}
+          -p:BinDir=${{ github.workspace }}\bin
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: trackz-msi-${{ matrix.platform }}
+          path: packaging/windows/wix/bin/${{ matrix.platform }}/Release/**/*.msi
+
+      - name: Attach to the release
+        if: github.ref_type == 'tag'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Either matrix job may get here first.
+          gh release view $env:GITHUB_REF_NAME 2>$null
+          if ($LASTEXITCODE -ne 0) { gh release create $env:GITHUB_REF_NAME --verify-tag --title $env:GITHUB_REF_NAME --notes "" 2>$null }
+          $msi = Get-ChildItem packaging/windows/wix/bin/${{ matrix.platform }}/Release -Recurse -Filter *.msi | Select-Object -First 1
+          gh release upload $env:GITHUB_REF_NAME $msi.FullName --clobber

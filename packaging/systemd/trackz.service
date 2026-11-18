@@ -16,6 +16,9 @@ After=graphical-session.target
 # expands ~ and $VARS itself; systemd does not).
 EnvironmentFile=-%h/.config/trackz/trackz.env
 ExecStart=/usr/local/bin/trackz run
+# Ends the open record and waits for trackz to exit (systemd's SIGTERM
+# would too; this is the same request the Windows installer makes).
+ExecStop=/usr/local/bin/trackz stop
 Restart=on-failure
 RestartSec=5
 

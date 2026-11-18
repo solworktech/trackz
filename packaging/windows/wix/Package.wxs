@@ -1,0 +1,94 @@
+<!--
+  Trackz installer: a per-user MSI. It needs no administrator rights,
+  installs to %LOCALAPPDATA%\Programs\Trackz, adds a Start menu shortcut for
+  trackz-viz and, if chosen, starts the trackz recorder at sign-in (an entry
+  under HKCU\...\Run). Uninstalling keeps the database and settings in
+  %APPDATA%\trackz.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="Trackz"
+           Manufacturer="Solworktech"
+           Version="$(var.TrackzVersion)"
+           UpgradeCode="F196EE49-612C-47F7-A827-526FFC2A0F09"
+           Scope="perUser"
+           Language="1033">
+    <SummaryInformation Description="Trackz: time spent in windows and applications" />
+    <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Icon Id="Trackz.ico" SourceFile="$(sys.SOURCEFILEDIR)..\trackz.ico" />
+    <Property Id="ARPPRODUCTICON" Value="Trackz.ico" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/solworktech/trackz" />
+
+    <!-- Choices on the installer's page (both on by default). -->
+    <Property Id="AUTOSTART" Value="1" Secure="yes" />
+    <Property Id="LAUNCH" Value="1" Secure="yes" />
+
+    <!-- Where an earlier version is installed: upgrades go to the same
+         folder, and its programs are stopped first. -->
+    <Property Id="PREVFOLDER" Secure="yes">
+      <RegistrySearch Id="PrevFolderSearch" Root="HKCU" Key="Software\Trackz" Name="InstallFolder" Type="raw" />
+    </Property>
+    <SetDirectory Id="INSTALLFOLDER" Value="[PREVFOLDER]" Condition="PREVFOLDER" Sequence="first" />
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="UserProgramsFolder" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="Trackz" />
+      </Directory>
+    </StandardDirectory>
+
+    <Feature Id="Main" Title="Trackz">
+      <ComponentRef Id="Program" />
+      <ComponentRef Id="StartMenuShortcut" />
+      <ComponentRef Id="AutoStart" />
+    </Feature>
+
+    <!-- Per-user components need a registry key path (ICE38) and must
+         remove the folders they create (ICE64). -->
+    <Component Id="Program" Directory="INSTALLFOLDER">
+      <File Id="TrackzExe" Source="$(var.BinDir)\trackz.exe" />
+      <File Id="TrackzVizExe" Source="$(var.BinDir)\trackz-viz.exe" />
+      <File Id="LicenseTxt" Source="$(var.RepoDir)\LICENSE" Name="LICENSE.txt" />
+      <RegistryValue Root="HKCU" Key="Software\Trackz" Name="InstallFolder" Type="string" Value="[INSTALLFOLDER]" KeyPath="yes" />
+      <RemoveFolder Id="RemoveInstallFolder" On="uninstall" />
+      <RemoveFolder Id="RemoveUserProgramsFolder" Directory="UserProgramsFolder" On="uninstall" />
+    </Component>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Component Id="StartMenuShortcut">
+        <Shortcut Id="TrackzVizShortcut"
+                  Name="Trackz"
+                  Description="Charts of the time spent in windows and applications"
+                  Target="[#TrackzVizExe]"
+                  WorkingDirectory="INSTALLFOLDER"
+                  Icon="Trackz.ico" />
+        <RegistryValue Root="HKCU" Key="Software\Trackz" Name="StartMenuShortcut" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </StandardDirectory>
+
+    <Component Id="AutoStart" Directory="INSTALLFOLDER" Condition="AUTOSTART = &quot;1&quot;">
+      <RegistryValue Root="HKCU" Key="Software\Microsoft\Windows\CurrentVersion\Run" Name="Trackz" Type="string" Value="&quot;[#TrackzExe]&quot; run" KeyPath="yes" />
+    </Component>
+
+    <!-- Before files are replaced or removed: stop the running programs of
+         the installed version, so nothing is in use. "trackz stop" closes
+         the open record and waits; "trackz-viz -quit" waits too. -->
+    <CustomAction Id="QuitViewer" Directory="LocalAppDataFolder" ExeCommand="&quot;[PREVFOLDER]trackz-viz.exe&quot; -quit" Execute="immediate" Return="ignore" />
+    <CustomAction Id="StopRecorder" Directory="LocalAppDataFolder" ExeCommand="&quot;[PREVFOLDER]trackz.exe&quot; stop" Execute="immediate" Return="ignore" />
+    <!-- "Start Trackz when setup finishes". -->
+    <CustomAction Id="StartRecorder" FileRef="TrackzExe" ExeCommand="run" Execute="immediate" Return="asyncNoWait" />
+    <CustomAction Id="StartViewer" FileRef="TrackzVizExe" ExeCommand="" Execute="immediate" Return="asyncNoWait" />
+
+    <InstallExecuteSequence>
+      <Custom Action="QuitViewer" Before="InstallValidate" Condition="PREVFOLDER" />
+      <Custom Action="StopRecorder" After="QuitViewer" Condition="PREVFOLDER" />
+      <Custom Action="StartRecorder" After="InstallFinalize" Condition="LAUNCH = &quot;1&quot; AND NOT (REMOVE ~= &quot;ALL&quot;)" />
+      <Custom Action="StartViewer" After="StartRecorder" Condition="LAUNCH = &quot;1&quot; AND NOT (REMOVE ~= &quot;ALL&quot;)" />
+    </InstallExecuteSequence>
+
+    <WixVariable Id="WixUIBannerBmp" Value="$(sys.SOURCEFILEDIR)banner.bmp" />
+    <WixVariable Id="WixUIDialogBmp" Value="$(sys.SOURCEFILEDIR)dialog.bmp" />
+    <WixVariable Id="WixUILicenseRtf" Value="$(sys.SOURCEFILEDIR)License.rtf" />
+    <UIRef Id="TrackzUI" />
+  </Package>
+</Wix>

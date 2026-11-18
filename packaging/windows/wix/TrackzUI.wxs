@@ -1,0 +1,89 @@
+<!--
+  The installer's user interface: one page with the licence (AGPLv3, shown
+  but not to be accepted), the per-user scope, the install folder and the
+  two options, then progress and the finish page. Repair and removal use
+  the standard WixUI maintenance pages. Built from the WixUI_Minimal and
+  WelcomeEulaDlg sources of WiX v5.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Fragment>
+    <UI Id="TrackzUI">
+      <TextStyle Id="WixUI_Font_Normal" FaceName="Tahoma" Size="8" />
+      <TextStyle Id="WixUI_Font_Bigger" FaceName="Tahoma" Size="12" />
+      <TextStyle Id="WixUI_Font_Title" FaceName="Tahoma" Size="9" Bold="yes" />
+      <Property Id="DefaultUIFont" Value="WixUI_Font_Normal" />
+      <Property Id="ARPNOMODIFY" Value="1" />
+      <!-- The folder the page and the Browse dialog edit. -->
+      <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
+      <Property Id="WIXUI_EXITDIALOGOPTIONALTEXT" Value="Trackz records in the background. Open Trackz from the Start menu to see where your time went." />
+
+      <DialogRef Id="BrowseDlg" />
+      <DialogRef Id="ErrorDlg" />
+      <DialogRef Id="ExitDialog" />
+      <DialogRef Id="FatalError" />
+      <DialogRef Id="FilesInUse" />
+      <DialogRef Id="MaintenanceTypeDlg" />
+      <DialogRef Id="MaintenanceWelcomeDlg" />
+      <DialogRef Id="MsiRMFilesInUse" />
+      <DialogRef Id="OutOfDiskDlg" />
+      <DialogRef Id="OutOfRbDiskDlg" />
+      <DialogRef Id="PrepareDlg" />
+      <DialogRef Id="ProgressDlg" />
+      <DialogRef Id="ResumeDlg" />
+      <DialogRef Id="UserExit" />
+      <DialogRef Id="VerifyReadyDlg" />
+
+      <Publish Dialog="ExitDialog" Control="Finish" Event="EndDialog" Value="Return" Order="999" />
+
+      <Publish Dialog="MaintenanceWelcomeDlg" Control="Next" Event="NewDialog" Value="MaintenanceTypeDlg" />
+      <Publish Dialog="MaintenanceTypeDlg" Control="RepairButton" Event="NewDialog" Value="VerifyReadyDlg" />
+      <Publish Dialog="MaintenanceTypeDlg" Control="RemoveButton" Event="NewDialog" Value="VerifyReadyDlg" />
+      <Publish Dialog="MaintenanceTypeDlg" Control="Back" Event="NewDialog" Value="MaintenanceWelcomeDlg" />
+      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="MaintenanceTypeDlg" />
+
+      <Dialog Id="TrackzInstallDlg" Width="370" Height="270" Title="[ProductName] Setup">
+        <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44" TabSkip="no" Text="WixUI_Bmp_Banner" />
+        <Control Id="Title" Type="Text" X="15" Y="6" Width="280" Height="15" Transparent="yes" NoPrefix="yes" Text="{\WixUI_Font_Title}Install [ProductName] [ProductVersion]" />
+        <Control Id="Description" Type="Text" X="25" Y="23" Width="280" Height="15" Transparent="yes" NoPrefix="yes" Text="Records which window has focus, and for how long." />
+        <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
+
+        <Control Id="LicenseLabel" Type="Text" X="20" Y="51" Width="330" Height="10" NoPrefix="yes" Text="Trackz is free software under the GNU Affero General Public License, version 3:" />
+        <Control Id="LicenseText" Type="ScrollableText" X="20" Y="63" Width="330" Height="80" Sunken="yes" TabSkip="no">
+          <Text SourceFile="!(wix.WixUILicenseRtf)" />
+        </Control>
+
+        <Control Id="ScopeText" Type="Text" X="20" Y="148" Width="330" Height="20" NoPrefix="yes" Text="Trackz will be installed for your Windows account only ([LogonUser]). No administrator rights are needed, and other users of this computer are not affected." />
+
+        <Control Id="FolderLabel" Type="Text" X="20" Y="171" Width="330" Height="10" Text="Install &amp;folder:" />
+        <Control Id="Folder" Type="PathEdit" X="20" Y="182" Width="272" Height="17" Property="WIXUI_INSTALLDIR" Indirect="yes" />
+        <Control Id="ChangeFolder" Type="PushButton" X="296" Y="182" Width="54" Height="17" Text="&amp;Change...">
+          <Publish Property="_BrowseProperty" Value="[WIXUI_INSTALLDIR]" Order="1" />
+          <Publish Event="SpawnDialog" Value="BrowseDlg" Order="2" />
+        </Control>
+
+        <Control Id="AutoStartCheckBox" Type="CheckBox" X="20" Y="203" Width="330" Height="12" Property="AUTOSTART" CheckBoxValue="1" Text="Start the Trackz &amp;recorder when I sign in to Windows" />
+        <Control Id="LaunchCheckBox" Type="CheckBox" X="20" Y="217" Width="330" Height="12" Property="LAUNCH" CheckBoxValue="1" Text="Start Trackz when setup &amp;finishes" />
+
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+        <Control Id="Back" Type="PushButton" X="156" Y="243" Width="56" Height="17" Disabled="yes" Text="!(loc.WixUIBack)" />
+        <Control Id="Install" Type="PushButton" X="212" Y="243" Width="80" Height="17" Default="yes" Text="&amp;Install">
+          <Publish Event="SetTargetPath" Value="[WIXUI_INSTALLDIR]" Order="1" />
+          <Publish Event="EndDialog" Value="Return" Order="2" Condition="OutOfDiskSpace &lt;&gt; 1" />
+          <Publish Event="SpawnDialog" Value="OutOfRbDiskDlg" Order="3" Condition="OutOfDiskSpace = 1 AND OutOfNoRbDiskSpace = 0 AND (PROMPTROLLBACKCOST=&quot;P&quot; OR NOT PROMPTROLLBACKCOST)" />
+          <Publish Event="EndDialog" Value="Return" Order="4" Condition="OutOfDiskSpace = 1 AND OutOfNoRbDiskSpace = 0 AND PROMPTROLLBACKCOST=&quot;D&quot;" />
+          <Publish Event="EnableRollback" Value="False" Order="5" Condition="OutOfDiskSpace = 1 AND OutOfNoRbDiskSpace = 0 AND PROMPTROLLBACKCOST=&quot;D&quot;" />
+          <Publish Event="SpawnDialog" Value="OutOfDiskDlg" Order="6" Condition="(OutOfDiskSpace = 1 AND OutOfNoRbDiskSpace = 1) OR (OutOfDiskSpace = 1 AND PROMPTROLLBACKCOST=&quot;F&quot;)" />
+        </Control>
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="!(loc.WixUICancel)">
+          <Publish Event="SpawnDialog" Value="CancelDlg" />
+        </Control>
+      </Dialog>
+
+      <InstallUISequence>
+        <Show Dialog="TrackzInstallDlg" Before="ProgressDlg" Condition="NOT Installed" />
+      </InstallUISequence>
+    </UI>
+
+    <UIRef Id="WixUI_Common" />
+  </Fragment>
+</Wix>

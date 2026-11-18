@@ -35,7 +35,7 @@ func (u *UI) trayItems() []tray.Item {
 	return []tray.Item{
 		{Label: "Show Trackz", OnClick: u.Raise},
 		{}, // separator
-		{Label: "Quit", OnClick: u.quit},
+		{Label: "Quit", OnClick: u.Quit},
 	}
 }
 
@@ -53,9 +53,9 @@ func (u *UI) Raise() {
 	w.Invalidate()
 }
 
-// quit ends the program, closing the window if it is open. Safe to call
-// from any goroutine.
-func (u *UI) quit() {
+// Quit ends the program, closing the window if it is open. Safe to call
+// from any goroutine; used by the tray menu and "trackz-viz -quit".
+func (u *UI) Quit() {
 	u.quitting.Store(true)
 	if w := u.win.Load(); w != nil {
 		w.Perform(system.ActionClose)

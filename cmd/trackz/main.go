@@ -4,6 +4,7 @@
 //	trackz [run] [flags]          record focus events (default)
 //	trackz init-db [flags]        create the database and table
 //	trackz fix-timestamps [flags] correct rows written by the Lua hooks
+//	trackz stop [flags]           stop the trackz recording to the database
 //	trackz version
 package main
 
@@ -34,6 +35,7 @@ import (
 func init() { runtime.LockOSThread() }
 
 func main() {
+	attachConsole()
 	args := os.Args[1:]
 	cmd := "run"
 	if len(args) > 0 && len(args[0]) > 0 && args[0][0] != '-' {
@@ -47,6 +49,8 @@ func main() {
 		err = cmdInitDB(args)
 	case "fix-timestamps":
 		err = cmdFixTimestamps(args)
+	case "stop":
+		err = cmdStop(args)
 	case "version":
 		fmt.Println("trackz", version.Version)
 	case "help", "-h", "--help":
@@ -68,6 +72,7 @@ Commands:
   run             record window focus events (default)
   init-db         create the database (and the trackz table) if missing
   fix-timestamps  correct timestamps written by the old devilspie2 Lua hooks
+  stop            stop the trackz recording to the database, and wait for it
   version         print the version
 
 Run "trackz <command> -h" for the flags of a command.
@@ -143,6 +148,15 @@ func cmdRun(args []string) error {
 			logger.Printf("trackz: release lock: %v", err)
 		}
 	}()
+	// "trackz stop" (on Unix it sends SIGTERM, handled above).
+	stopListening, err := listenForStop(ctx, dbPath, func() {
+		logger.Printf("trackz: stop requested")
+		cancel()
+	})
+	if err != nil {
+		return err
+	}
+	defer stopListening()
 
 	st, err := store.Open(ctx, dbPath)
 	if err != nil {
@@ -177,6 +191,47 @@ func cmdRun(args []string) error {
 	}
 	logger.Printf("trackz: stopped")
 	return nil
+}
+
+// cmdStop stops the trackz recording to the database and waits until it
+// has closed its open record and released the database.
+func cmdStop(args []string) error {
+	fs := flag.NewFlagSet("stop", flag.ExitOnError)
+	dbFlag := fs.String("db", "", "database path (default: as for run)")
+	timeout := fs.Duration("timeout", 10*time.Second, "how long to wait for trackz to stop")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	dbPath, err := config.ResolveDBPath(*dbFlag, loadConfig())
+	if err != nil {
+		return err
+	}
+	lockPath := lockfile.ForDatabase(dbPath)
+	held, pid, err := lockfile.Held(lockPath)
+	if err != nil {
+		return err
+	}
+	if !held {
+		fmt.Println("trackz is not recording to", dbPath)
+		return nil
+	}
+	if err := requestStop(dbPath, pid); err != nil {
+		return fmt.Errorf("cannot stop trackz (PID %d): %w", pid, err)
+	}
+	deadline := time.Now().Add(*timeout)
+	for {
+		time.Sleep(100 * time.Millisecond)
+		if held, _, err = lockfile.Held(lockPath); err != nil {
+			return err
+		}
+		if !held {
+			fmt.Printf("trackz (PID %d) stopped\n", pid)
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("trackz (PID %d) did not stop within %s", pid, *timeout)
+		}
+	}
 }
 
 func cmdInitDB(args []string) error {

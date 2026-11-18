@@ -1,0 +1,23 @@
+<!--
+  Builds the Trackz MSI (per-user, WiX Toolset v5). On Windows, with the
+  .NET SDK installed and the two executables built into BinDir:
+
+    dotnet build Trackz.wixproj -c Release -p:Platform=x64 -p:TrackzVersion=1.2.3 -p:BinDir=C:\src\trackz\bin
+
+  Platform is x64 or arm64; the MSI is written to bin\<Platform>\Release\en-US.
+  .github/workflows/windows-installer.yml does all of this for tagged releases.
+-->
+<Project Sdk="WixToolset.Sdk/5.0.2">
+  <PropertyGroup>
+    <!-- MSI versions are numeric: major.minor.build (each part limited). -->
+    <TrackzVersion Condition="'$(TrackzVersion)' == ''">0.0.0</TrackzVersion>
+    <BinDir Condition="'$(BinDir)' == ''">$(MSBuildThisFileDirectory)..\..\..\bin</BinDir>
+    <RepoDir>$(MSBuildThisFileDirectory)..\..\..</RepoDir>
+    <OutputName>trackz-$(TrackzVersion)-$(Platform)</OutputName>
+    <Cultures>en-US</Cultures>
+    <DefineConstants>TrackzVersion=$(TrackzVersion);BinDir=$(BinDir);RepoDir=$(RepoDir)</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="WixToolset.UI.wixext" Version="5.0.2" />
+  </ItemGroup>
+</Project>
