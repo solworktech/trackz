@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <!-- Trackz logo: a stopwatch whose face is a pie chart (time, tracked and charted). -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3f51b5"/>
+      <stop offset="1" stop-color="#00897b"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="240" height="240" rx="56" ry="56" fill="url(#bg)"/>
+  <rect x="110" y="30" width="36" height="18" rx="6" ry="6" fill="#ffffff"/>
+  <rect x="121" y="44" width="14" height="18" fill="#ffffff"/>
+  <rect x="181" y="58" width="22" height="12" rx="4" ry="4" fill="#ffffff" transform="rotate(45 192 64)"/>
+  <circle cx="128" cy="146" r="82" fill="#ffffff"/>
+  <circle cx="128" cy="146" r="66" fill="#283593"/>
+  <path d="M128,146 L128,80 A66,66 0 0 1 185.16,179 Z" fill="#ffc107"/>
+  <path d="M128,146 L185.16,179 A66,66 0 0 1 128,212 Z" fill="#ef5350"/>
+  <circle cx="128" cy="146" r="12" fill="#ffffff"/>
+</svg>

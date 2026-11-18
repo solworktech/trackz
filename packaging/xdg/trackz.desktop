@@ -1,0 +1,10 @@
+# XDG autostart entry, an alternative to the systemd unit for desktops that
+# do not use systemd user sessions. Copy to ~/.config/autostart/ (per user)
+# or /etc/xdg/autostart/ (all users).
+[Desktop Entry]
+Type=Application
+Name=Trackz
+Comment=Record time spent in windows/applications
+Exec=trackz run
+NoDisplay=true
+X-GNOME-Autostart-enabled=true

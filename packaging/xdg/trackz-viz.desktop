@@ -1,0 +1,12 @@
+# Install to ~/.local/share/applications/ (or /usr/share/applications/).
+# On Wayland the window icon is taken from this file, matched by name, so
+# keep the file name trackz-viz.desktop. Install the icons too (make install).
+[Desktop Entry]
+Type=Application
+Name=Trackz Visualization
+Comment=Charts and reports of time spent in windows/applications
+Exec=trackz-viz
+Icon=trackz
+StartupWMClass=trackz-viz
+Categories=Utility;Office;
+Terminal=false

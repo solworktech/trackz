@@ -1,0 +1,23 @@
+# systemd *user* unit. Install with:
+#   install -Dm644 trackz.service ~/.config/systemd/user/trackz.service
+#   systemctl --user daemon-reload && systemctl --user enable --now trackz
+#
+# trackz needs DISPLAY. Most desktop environments export it to the systemd
+# user manager; if yours does not, add this to your session startup:
+#   systemctl --user import-environment DISPLAY XAUTHORITY
+[Unit]
+Description=Trackz - record time spent in windows/applications
+Documentation=https://github.com/solworktech/trackz
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+# Optional overrides, e.g. TRACKZ_DB=~/.config/trackz/trackz.db (trackz
+# expands ~ and $VARS itself; systemd does not).
+EnvironmentFile=-%h/.config/trackz/trackz.env
+ExecStart=/usr/local/bin/trackz run
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target

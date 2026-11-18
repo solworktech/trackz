@@ -1,0 +1,404 @@
+[Trackz](https://github.com/solworktech/trackz) - Monitor time spent in apps/windows
+
+## Intended use
+
+- Keeping track of how one's time is spent (working on project X, playing game Y, corresponding with colleague N, etc)
+- Filing billing reports (for contractors, professional services, etc)
+
+**This is not Intended as a tool for companies to spy on their employees. Whilst I cannot prevent that sort of usage, if
+you have that in mind, know that I do not like you. To put it mildly.**
+
+## How does it work?
+
+Trackz consists of two programs, written in Go:
+
+- **`trackz`**: a small daemon that watches which window has focus and records every focus change and window
+  title change in an SQLite3 database: process name, application name, window title, process owner and the time
+  the window gained and lost focus. It also records periods when the screen was locked or the machine was asleep.
+- **`trackz-viz`**: a graphical dashboard ([Gio](https://gioui.org)) with charts, tables, custom SQL queries and CSV
+  export.
+
+Because the process name, application name, window title and the exact time the window was in focus are all recorded,
+you can perform granular queries. For example, you could check how long was spent:
+
+- Talking to Jim on Slack yesterday
+- On the "Project X" channel this week
+- Editing spreadsheets in LibreOffice
+- Editing annoying.cvs specifically
+- In apps (browser, LibreOffice, terminal, VIM, whatever) where the window title included "Project Z"
+
+See the [Useful Queries](#useful-queries) section for some examples.
+
+### Supported platforms
+
+| Platform | Window tracking | Sleep / lock detection |
+|---|---|---|
+| Linux, FreeBSD, OpenBSD, NetBSD, DragonFly (X11, or XWayland apps) | [libwnck](https://gitlab.gnome.org/GNOME/libwnck) | D-Bus: `*.ScreenSaver.ActiveChanged` (session), logind `PrepareForSleep` (system) |
+| macOS | NSWorkspace + Accessibility API | NSWorkspace sleep/wake/screens, `com.apple.screenIsLocked` |
+| Windows | `SetWinEventHook` (foreground and title changes) | `WM_POWERBROADCAST`, `WM_WTSSESSION_CHANGE` |
+
+Notes:
+
+- libwnck only sees X11 windows. On a Wayland session, native Wayland windows are invisible to it (devilspie2 had the
+  same limitation); applications running under XWayland are tracked.
+- On macOS, window titles require Accessibility permission: allow the `trackz` binary (or the terminal you start it
+  from) under *System Settings → Privacy & Security → Accessibility*. Without it, application switches are still
+  recorded, with the application name as the window title.
+- Only the title changes of the **focused** window are recorded.
+
+**Pro tips**
+
+- If, like me, you do a lot of work in the terminal, be sure to set custom titles to your tabs to denote what you're
+  working on (i.e: "project X, component Z", "git clone", etc)
+- If you want your reports to include time spent away from the machine, you can use a util like `gxmessage`, for example, to
+  record a lunch break, invoke: `gxmessage --title "Food run" "Let's see how long this takes..."` before you leave and
+  close it when you return
+
+## Installation
+
+### Requirements
+
+- Go 1.24 or newer.
+- **Linux/BSD**: a C compiler, `pkg-config` and the libwnck 3 and GTK 3 development files for `trackz`; for
+  `trackz-viz`, Gio's [dependencies](https://gioui.org/doc/install/linux) (Wayland, X11, EGL/GLES and Vulkan
+  headers). On Debian/Ubuntu:
+  ```sh
+  # apt install gcc pkg-config libwnck-3-dev libgtk-3-dev \
+        libwayland-dev libx11-dev libx11-xcb-dev libxkbcommon-x11-dev libgles2-mesa-dev libegl1-mesa-dev \
+        libffi-dev libxcursor-dev libvulkan-dev
+  ```
+  On FreeBSD: `pkg install go pkgconf libwnck3 gtk3`.
+- **macOS**: the Xcode command line tools (`xcode-select --install`).
+- **Windows**: nothing beyond Go; no C compiler is needed.
+
+SQLite is built in ([modernc.org/sqlite](https://pkg.go.dev/modernc.org/sqlite), pure Go): no SQLite library or Lua
+modules are needed. The `sqlite3` CLI is still handy for ad-hoc queries.
+
+### Building
+
+```sh
+$ make            # builds bin/trackz and bin/trackz-viz
+# make install    # copies them to /usr/local/bin
+```
+
+or `go build ./cmd/trackz ./cmd/trackz-viz`. On Windows, `make` builds both without a console window; use
+`go build` directly if you want one for `trackz` (to see its log output).
+
+## Running
+
+```sh
+$ trackz run -debug
+```
+
+`trackz run` (or just `trackz`) creates the database if needed and starts recording. With `-debug`, every event is
+logged:
+
+```
+2026/02/08 17:53:56 insert window 'Go Report Card | Go project code quality report cards — Mozilla Firefox (firefox-esr)' Owner: 'jesse'
+2026/02/08 17:53:57 update record 41: focus_end_time=1770573237
+```
+
+| Flag | Meaning |
+|---|---|
+| `-db PATH` | database file (see below) |
+| `-debug` | log every event |
+| `-log FILE` | append the log to FILE instead of stderr |
+| `-id-file FILE` | where to mirror the id of the open record (default `$XDG_RUNTIME_DIR/trackz_last_event_id`, `-` to disable) |
+| `-no-power` | do not record sleep/lock periods |
+| `-dbus-monitor` | Linux/BSD: eavesdrop on the session bus (`BecomeMonitor`) for screen-lock signals, for lockers that do not broadcast `ActiveChanged` |
+
+Other commands: `trackz init-db`, `trackz fix-timestamps` (see [Migrating](#migrating-from-the-devilspie2-version)),
+`trackz version`.
+
+Stopping `trackz` (Ctrl-C, `SIGTERM`) closes the open record.
+
+### Database location
+
+`trackz` and `trackz-viz` pick the database the same way, in order of precedence:
+
+1. the `-db` flag, if given on the command line,
+2. the `TRACKZ_DB` environment variable,
+3. `db_path` in `config.json`,
+4. the default, `trackz.db` next to `config.json` in the per-user config directory:
+   - Linux/BSD: `$XDG_CONFIG_HOME/trackz/trackz.db`, or `~/.config/trackz/trackz.db` if `XDG_CONFIG_HOME` is unset
+   - macOS: `~/Library/Application Support/trackz/trackz.db`
+   - Windows: `%APPDATA%\trackz\trackz.db`
+
+A leading `~` and `$VARIABLES` in `TRACKZ_DB`, `db_path` and `-db` are expanded by Trackz itself, so
+`TRACKZ_DB=~/data/trackz.db` also works in a systemd `Environment=` line or `EnvironmentFile=` (systemd does not expand
+them). `trackz` logs the absolute path it records to, and `trackz-viz` shows the database it opened in its window title.
+
+Note that a `TRACKZ_DB` set only in the systemd unit (or its `EnvironmentFile`) is not seen by `trackz-viz` started from
+a shell or the desktop menu. Use the default, `db_path` in `config.json` or an environment variable set for the whole
+session so both programs use the same file; `trackz-viz` warns when no `trackz` is recording to the database it shows.
+
+Only one `trackz` can record to a database at a time: a second one exits with an error naming the first one's PID. The
+lock file is `<database>.lock`; `trackz-viz` also uses it to tell whether `trackz` is running.
+
+`trackz` closes the open record when stopped with Ctrl-C, `SIGTERM`, `SIGHUP` (e.g. its terminal is closed) or
+`SIGQUIT`. If it is killed outright or crashes, the next start closes that record at the last moment the previous run
+was known to be alive: it writes a heartbeat to `$XDG_RUNTIME_DIR` (the temporary directory elsewhere) on every focus
+change and every 30 seconds, so at most 30 seconds are lost.
+
+The directory holding the database must be writable by the user running `trackz`.
+
+### Recording several users
+
+`trackz` runs in the desktop session of the user whose windows it watches; the separate `devilspie` user and the
+`xauth` workaround are no longer needed. The process owner is read per window, so if you run `su - otheruser` in a
+terminal and start X apps from it, `process_owner` is still that user. To collect several users' activity in one
+database, point their `TRACKZ_DB` at a shared file in a directory they can all write to.
+
+### Starting automatically
+
+- **Linux/BSD with systemd**: [packaging/systemd/trackz.service](./packaging/systemd/trackz.service) is a *user* unit:
+  ```sh
+  $ install -Dm644 packaging/systemd/trackz.service ~/.config/systemd/user/trackz.service
+  $ systemctl --user enable --now trackz
+  ```
+  Environment overrides (e.g. `TRACKZ_DB`) go in `~/.config/trackz/trackz.env`.
+- **Any XDG desktop**: copy [packaging/xdg/trackz.desktop](./packaging/xdg/trackz.desktop) to
+  `~/.config/autostart/` (or `/etc/xdg/autostart/` for all users).
+- **macOS**: see [packaging/launchd/org.solworktech.trackz.plist](./packaging/launchd/org.solworktech.trackz.plist).
+- **Windows**: `powershell -ExecutionPolicy Bypass -File packaging\windows\install-autostart.ps1 -Exe C:\path\to\trackz.exe`.
+
+## Visualisation: `trackz-viz`
+
+```sh
+$ trackz-viz            # or: trackz-viz -db /path/to/trackz.db
+```
+
+- **Time range**: Today, last 7/30/90 days, or custom dates; the number of dashboard rows is configurable.
+- **Dashboard**: the top activities (process + window title) as a pie chart with application icons, plus a table;
+  exportable as CSV (to the path in the *Export to* field, which defaults to `~/trackz-<view>-<date>.csv`).
+- Hovering over a pie slice, bar or point shows its details.
+- Reports that include the present refresh themselves every 5 minutes (configurable; 0 turns it off), and the window
+  currently in focus is counted up to now. The heading shows how many records were left out for being shorter than the minimum duration.
+- **Top Apps** (bar chart), **Time Spent** per app (pie chart), **Window Activity** over time (focus time per hour,
+  or per day for longer ranges), **Daily Stats** (focus time and number of apps per day).
+- **Custom range**: the *Custom…* button opens a dialog with two calendars and quick picks (this/last week, this/last
+  month, this year). Enter applies, Esc or a click outside cancels.
+- **Custom Query**: any `SELECT` (or `WITH ... SELECT`), with SQL syntax highlighting (double-click selects a word,
+  triple-click a line; keep the button down after either and drag to extend the selection by words or lines), shown as a bar, line, pie or
+  time-series chart, or as a table; exportable as CSV. Queries run on a read-only connection. For charts, as in the
+  original viewer, name the columns to choose what is plotted: `AS label` for the labels and `AS value`,
+  `AS total_time` or `AS duration` for the values. Values may be numbers or `H:MM:SS` text such as
+  `time(focus_end_time - focus_start_time, 'unixepoch')`; columns whose name mentions time, duration or seconds are
+  shown as durations. For example:
+  ```sql
+  SELECT process_name, window_name AS label,
+         SUM(focus_end_time - focus_start_time) AS duration
+  FROM trackz
+  WHERE focus_start_time >= unixepoch('now', '-7 days')
+  GROUP BY process_name, window_name
+  ORDER BY duration DESC
+  LIMIT 20
+  ```
+- **Saved queries**: *Save query* stores the query under a name, as `<name>.sql` in the `saved_queries` directory next
+  to the config file (`~/.config/trackz/saved_queries` on Linux/BSD,
+  `~/Library/Application Support/trackz/saved_queries` on macOS, `%AppData%\trackz\saved_queries` on Windows). The
+  *Saved query* box above the editor lists them; type to filter, then pick one (or press Enter) to load it into the
+  editor, where it can be changed before running. The files are plain SQL, so they can also be edited, copied or
+  version-controlled outside Trackz.
+- **Tray icon**: while `trackz-viz` runs, the Trackz logo sits in the system tray. Clicking it brings the window to
+  the front (restoring it if minimised); its context menu has *Show Trackz* and *Quit*. With the tray icon shown,
+  closing the window does not quit `trackz-viz`: the window goes away, the program keeps running in the tray, and a
+  click on the icon (or *Show Trackz*) opens the window again as you left it. Quit from the tray menu. Where no tray
+  icon can be shown, closing the window quits as usual.
+- **Single instance**: only one `trackz-viz` runs per user. Starting it again (from the menu, a launcher or a
+  terminal) brings the running one to the front, reopening its window if it was closed to the tray, and exits. Linux/BSD use the
+  StatusNotifierItem protocol, which KDE, XFCE, LXQt, Cinnamon, MATE, Budgie and waybar support; GNOME needs the
+  *AppIndicator and KStatusNotifierItem Support* extension. On Wayland, desktops may refuse to let an application
+  focus its own window; the click then only highlights it.
+- **Recorder check**: `trackz-viz` checks at start-up and every 30 seconds whether `trackz` is recording to the
+  database it shows. If not, it says so in a message box (again whenever `trackz` stops) and in the status bar for as
+  long as the problem lasts.
+- **Appearance**: follows the desktop's dark/light preference (XDG portal, GNOME, GTK and KDE settings on Linux/BSD;
+  the system setting on macOS and Windows) and switches live; it can also be forced to light or dark in Settings.
+- **Settings**: appearance, refresh interval, display time zone, date and time formats (strftime-style, e.g. `%d/%m/%Y`), dashboard rows and the
+  minimum total for an entry to be listed: windows or applications with less than 120 seconds in the period are hidden
+  from the dashboard and the app charts by default. Unlike the original viewer, which dropped every *record* shorter
+  than 120 seconds, short visits still count: ten 20-second visits to a window make a 200-second entry, and daily
+  statistics include everything.
+
+Settings are stored in `config.json` in the same directory as the default database: `$XDG_CONFIG_HOME/trackz/` or
+`~/.config/trackz/` (Linux/BSD), `~/Library/Application Support/trackz/` (macOS), `%APPDATA%\trackz\` (Windows).
+`TRACKZ_CONFIG` overrides the file's location.
+
+### Logo and icons
+
+The logo source is [internal/assets/logo.svg](./internal/assets/logo.svg). `make icons` regenerates everything derived
+from it: the PNGs embedded in `trackz-viz`, the hicolor icon theme files under `packaging/icons`, `packaging/windows/trackz.ico`
+and the Windows resource files `cmd/trackz-viz/rsrc_windows_*.syso`.
+
+The window icon is set as follows: on X11 by `trackz-viz` itself (`_NET_WM_ICON`); on Wayland from the installed
+`trackz-viz.desktop` and `trackz` icon (`make install` installs both); on Windows from the embedded resources; on macOS
+`trackz-viz` sets its Dock icon at start-up.
+
+## Data schema and notes
+
+The schema is unchanged; see the [schema file](./trackz_schema.sql), which includes annotations per field.
+
+`trackz` records have a `focus_start_time` column and a `focus_end_time`. These values are stored as UNIX epoch
+timestamps (UTC). Display time zone and formats are applied by the viewer.
+
+**Note that `focus_start_time` is specific to a record/event; it's when the window received focus, not necessarily when the
+process was launched. Each process will likely result in multiple records, as you toggle between windows (and tabs).**
+
+- `process_name` is the executable name: `/proc/<pid>/comm` on Linux (as devilspie2 recorded it, at most 15
+  characters), the process command name on BSD and macOS, and the executable name without `.exe` on Windows.
+- `app_name` is the X11 `WM_CLASS` class (e.g. `firefox-esr`, `XTerm`, `Slack`) on Linux/BSD, the localized
+  application name on macOS, and the executable's *FileDescription* (e.g. `Firefox`) on Windows. (devilspie2 used
+  libwnck's guessed application name, which for many applications was the title of their first window.)
+- While the screen is locked or the machine sleeps, a record with `process_name = 'sleep'`,
+  `app_name = 'sleep_mode'`, `window_name = 'System Sleep'` and `process_owner = 'system'` covers the gap. Exclude
+  it with `WHERE app_name <> 'sleep_mode'`.
+- The record of the focused window is open (`focus_end_time` is `NULL`) until focus moves.
+
+## Migrating from the devilspie2 version
+
+1. Stop and disable the `devilspie2` service and remove the Lua hooks.
+2. Back up the database.
+3. The Lua hooks stored times shifted by your UTC offset (`os.time(os.date("!*t"))` interprets the UTC wall clock
+   as local time), so data recorded during e.g. British Summer Time is an hour early. Correct it **once**:
+   ```sh
+   $ trackz fix-timestamps -db /etc/trackz/trackz.db -tz Europe/London          # dry run: shows what would change
+   $ trackz fix-timestamps -db /etc/trackz/trackz.db -tz Europe/London -apply
+   ```
+   Do this before `trackz` writes to the database, or pass `-max-id` with the last id written by the Lua hooks.
+   Sleep records written by the old Rust viewer already used Unix time and are left alone.
+4. Start `trackz` with `TRACKZ_DB` (or `-db`) pointing at the existing database.
+
+## Useful queries
+
+The sample outputs for the below queries were generated using the `sqlite3` CLI client with `.mode box --wrap 30`.
+See [4. Changing Output Formats](https://www.sqlite.org/cli.html) for supported output modes. One that may be of
+particular interest is `.mode csv`, which you could use to export the data for further manipulation elsewhere.
+
+Output the event ID (auto incremented), process name, window name and the time it spent in focus
+(formatted as %H:%M:%S, i.e. 00:01:42):
+
+```sql
+SELECT id, process_name, window_name, 
+time(focus_end_time - focus_start_time,'unixepoch') as duration from trackz;
+```
+
+Sample output:
+
+```
+┌────┬──────────────┬────────────────────────────────────────────────────┬──────────┐
+│ id │ process_name │                    window_name                     │ duration │
+├────┼──────────────┼────────────────────────────────────────────────────┼──────────┤
+│ 1  │ lxterminal   │ devilspie2                                         │ 00:00:02 │
+├────┼──────────────┼────────────────────────────────────────────────────┼──────────┤
+│ 2  │ firefox-esr  │ jessp01/devilspie2: Devilspie2 is an X window (Lua │ 00:01:37 │
+│    │              │ ) hooks mechanism; it supports the following event │          │
+│    │              │ s: window opened, closed, focused and title change │          │
+│    │              │ d — Mozilla Firefox                                │          │
+├────┼──────────────┼────────────────────────────────────────────────────┼──────────┤
+│ 3  │ firefox-esr  │ Recruitment - overhaul required, urgently (part II │ 00:00:17 │
+│    │              │ ) - Jesse Portnoy — Mozilla Firefox                │          │
+├────┼──────────────┼────────────────────────────────────────────────────┼──────────┤
+│ 4  │ firefox-esr  │ Watch The Big Bang Theory - Season 6 | Prime Video │ 00:02:05 │
+│    │              │  — Mozilla Firefox                                 │          │
+└────┴──────────────┴────────────────────────────────────────────────────┴──────────┘
+
+```
+
+-----
+
+Output all events where the process name is `firefox-esr`, include event duration (formatted as `%H:%M:%S`) and the
+focus end time (in localtime), order by focus duration:
+
+```sql
+SELECT id, process_name, window_name, 
+time (focus_end_time - focus_start_time,'unixepoch') as duration, 
+DATETIME(ROUND(focus_end_time), 'unixepoch','localtime') as focus_end_time 
+from trackz where process_name='firefox-esr' 
+order by duration desc;
+```
+
+Sample output:
+
+```
+┌─────┬──────────────┬────────────────────────────────┬──────────┬─────────────────────┐
+│ id  │ process_name │          window_name           │ duration │   focus_end_time    │
+├─────┼──────────────┼────────────────────────────────┼──────────┼─────────────────────┤
+│ 34  │ firefox-esr  │ Watch The Big Bang Theory - Se │ 00:00:58 │ 2025-02-08 19:22:52 │
+│     │              │ ason 6 | Prime Video — Mozilla │          │                     │
+│     │              │  Firefox                       │          │                     │
+├─────┼──────────────┼────────────────────────────────┼──────────┼─────────────────────┤
+│ 38  │ firefox-esr  │ jessp01 (Jesse Portnoy) — Mozi │ 00:00:49 │ 2025-02-08 19:28:13 │
+│     │              │ lla Firefox                    │          │                     │
+├─────┼──────────────┼────────────────────────────────┼──────────┼─────────────────────┤
+│ 37  │ firefox-esr  │ Notifications | LinkedIn — Moz │ 00:00:41 │ 2025-02-08 19:27:24 │
+│     │              │ illa Firefox                   │          │                     │
+├─────┼──────────────┼────────────────────────────────┼──────────┼─────────────────────┤
+│ 149 │ firefox-esr  │ Command Line Shell For SQLite  │ 00:00:01 │ 2025-02-08 20:05:45 │
+│     │              │ — Mozilla Firefox              │          │                     │
+└─────┴──────────────┴────────────────────────────────┴──────────┴─────────────────────┘
+
+```
+
+You can replace `where process_name='firefox-esr'` with `where window_name like '%project Z%'` to get all events 
+generated from windows that pertain to that project (LibreOffice, browser, terminal, etc), because the window title will
+likely include that string (be it in the filename, title of the web page or the name of the Slack channel).
+
+------
+
+Aggregate events by `process_name`, `window_name` and day (calculated from `focus_start_time`; add `'localtime'` to `datetime()` to group by local rather than UTC day), 
+order by day and total (aggregated) duration.
+
+This is probably one of the most useful examples as you can use it to see where most of your time was spent.
+
+```sql
+SELECT DISTINCT process_name, window_name, 
+time (sum (focus_end_time - focus_start_time),'unixepoch') as focus_duration, 
+sum (focus_end_time - focus_start_time) as focus_in_seconds, 
+strftime('%d-%m-%Y', datetime(focus_start_time, 'unixepoch')) as day from trackz 
+group by process_name, window_name, day order by day, sum (focus_end_time - focus_start_time);
+```
+
+Sample output:
+
+```
+┌──────────────┬────────────────────────────────┬────────────────┬───────────────┬────────────┐
+│ process_name │          window_name           │ focus_duration │ focus_in_secs │    day     │
+├──────────────┼────────────────────────────────┼────────────────┼───────────────┼────────────┤
+│ lxterminal   │ jesse@jessex: ~/tmp/trackz     │ 00:43:37       │ 2617          │ 08-02-2025 │
+├──────────────┼────────────────────────────────┼────────────────┼───────────────┼────────────┤
+│ lxterminal   │ root@jessex: ~                 │ 00:39:20       │ 2360          │ 08-02-2025 │
+├──────────────┼────────────────────────────────┼────────────────┼───────────────┼────────────┤
+│ firefox-esr  │ Watch The Big Bang Theory - Se │ 00:29:17       │ 1757          │ 08-02-2025 │
+│              │ ason 6 | Prime Video — Mozilla │                │               │            │
+│              │  Firefox                       │                │               │            │
+├──────────────┼────────────────────────────────┼────────────────┼───────────────┼────────────┤
+│ gxmessage    │ Food run                       │ 00:26:12       │ 1572          │ 08-02-2025 │
+├──────────────┼────────────────────────────────┼────────────────┼───────────────┼────────────┤
+│ kblocks      │ KBlocks                        │ 00:13:56       │ 836           │ 08-02-2025 │
+└──────────────┴────────────────────────────────┴────────────────┴───────────────┴────────────┘
+
+```
+
+
+## Architecture
+
+The code follows a model / controller / view split so that more frontends (e.g. a terminal UI) can be added without
+touching the logic:
+
+| Package | Role |
+|---|---|
+| `internal/store` | model: SQLite access (schema, inserts, queries, read-only custom queries, timestamp migration) |
+| `internal/tracker` | event logic and the platform backends (libwnck, macOS, Windows, D-Bus) |
+| `internal/report` | controller: time ranges, all reports as frontend-neutral `Series`/`Table` values, custom-query charting, CSV export |
+| `internal/config`, `internal/timefmt` | settings shared by every binary; time zone and strftime formatting |
+| `internal/icons` | application icon lookup per platform |
+| `internal/queries` | saved custom queries (`<name>.sql` files) |
+| `internal/highlight` | SQL syntax-highlighting spans ([gohighlight](https://github.com/jessp01/gohighlight) with its `sql.yaml`) |
+| `internal/systheme` | desktop dark/light preference |
+| `internal/tray` | system tray icon and menu (StatusNotifierItem/dbusmenu, Shell_NotifyIcon, NSStatusItem) |
+| `ui/gio` | the Gio frontend: draws what `report` returns and passes user input back |
+| `cmd/trackz`, `cmd/trackz-viz` | entry points |
+
+A new frontend calls `report.Open`, then `Service.Run(ctx, view, range)` or `Service.CustomQuery`, and renders the
+returned `report.Result`.
