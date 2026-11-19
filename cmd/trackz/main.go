@@ -2,6 +2,7 @@
 // SQLite database. It replaces the devilspie2 + Lua hooks setup.
 //
 //	trackz [run] [flags]          record focus events (default)
+//	trackz autostart [flags]      run, unless the systemd user unit does
 //	trackz init-db [flags]        create the database and table
 //	trackz fix-timestamps [flags] correct rows written by the Lua hooks
 //	trackz stop [flags]           stop the trackz recording to the database
@@ -45,6 +46,8 @@ func main() {
 	switch cmd {
 	case "run":
 		err = cmdRun(args)
+	case "autostart":
+		err = cmdAutostart(args)
 	case "init-db":
 		err = cmdInitDB(args)
 	case "fix-timestamps":
@@ -61,15 +64,24 @@ func main() {
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "trackz:", err)
+		if errors.Is(err, lockfile.ErrLocked) {
+			os.Exit(exitLocked)
+		}
 		os.Exit(1)
 	}
 }
+
+// exitLocked is the exit status when another trackz holds the database
+// (the systemd unit does not restart trackz for it: RestartPreventExitStatus).
+const exitLocked = 3
 
 func usage(w io.Writer) {
 	_, _ = fmt.Fprint(w, `Usage: trackz <command> [flags]
 
 Commands:
   run             record window focus events (default)
+  autostart       run, unless the systemd user unit starts trackz in this
+                  session (for the XDG autostart entry; takes run's flags)
   init-db         create the database (and the trackz table) if missing
   fix-timestamps  correct timestamps written by the old devilspie2 Lua hooks
   stop            stop the trackz recording to the database, and wait for it

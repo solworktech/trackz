@@ -36,7 +36,7 @@ const (
 	DefaultRowLimit = 20
 	// DefaultRefreshMinutes is how often views showing the present are
 	// recomputed.
-	DefaultRefreshMinutes = 5
+	DefaultRefreshMinutes = 1
 
 	// Theme values.
 	ThemeSystem = "system"

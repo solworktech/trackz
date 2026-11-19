@@ -1,4 +1,5 @@
-# systemd *user* unit. Install with:
+# systemd *user* unit. The deb and rpm packages install it to
+# /usr/lib/systemd/user/ and enable it for every user. By hand:
 #   install -Dm644 trackz.service ~/.config/systemd/user/trackz.service
 #   systemctl --user daemon-reload && systemctl --user enable --now trackz
 #
@@ -15,12 +16,16 @@ After=graphical-session.target
 # Optional overrides, e.g. TRACKZ_DB=~/.config/trackz/trackz.db (trackz
 # expands ~ and $VARS itself; systemd does not).
 EnvironmentFile=-%h/.config/trackz/trackz.env
-ExecStart=/usr/local/bin/trackz run
+# No directory: systemd looks in /usr/local/bin, then /usr/bin, so the same
+# unit serves `make install` and the packages.
+ExecStart=trackz run
 # Ends the open record and waits for trackz to exit (systemd's SIGTERM
 # would too; this is the same request the Windows installer makes).
-ExecStop=/usr/local/bin/trackz stop
+ExecStop=trackz stop
 Restart=on-failure
 RestartSec=5
+# 3: another trackz already records to the database; retrying won't help.
+RestartPreventExitStatus=3
 
 [Install]
 WantedBy=graphical-session.target

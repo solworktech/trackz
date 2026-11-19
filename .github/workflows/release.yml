@@ -1,0 +1,99 @@
+---
+# Release for a version tag (v1.2.3): Linux archives, deb, rpm and Arch
+# packages (.goreleaser.yaml), then macOS archives
+# (.goreleaser.darwin.yaml). The Windows MSIs come from windows-installer.yml.
+#
+# The release uses the workflow's own token. For the Homebrew formula (not
+# enabled yet), add a GH_TOKEN secret that can push to
+# solworktech/homebrew-trackz and uncomment it below.
+name: Release
+
+"on":
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write  # to create the release and upload to it
+
+jobs:
+  linux:
+    # Not ubuntu-latest: the arm64 setup below edits this release's apt
+    # sources (deb822 format, ports.ubuntu.com for arm64).
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # tags, for the changelog
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install build dependencies (amd64, and arm64 to cross-compile)
+        run: |
+          set -eu
+          codename=$(. /etc/os-release && echo "$VERSION_CODENAME")
+          # arm64 packages come from ports.ubuntu.com: keep the existing
+          # sources to amd64 and add the ports for arm64.
+          sudo dpkg --add-architecture arm64
+          sudo sed -i '/^Types:/a Architectures: amd64' /etc/apt/sources.list.d/ubuntu.sources
+          sudo tee /etc/apt/sources.list.d/ubuntu-ports.sources >/dev/null <<EOF
+          Types: deb
+          URIs: http://ports.ubuntu.com/ubuntu-ports/
+          Suites: $codename $codename-updates $codename-security
+          Components: main universe
+          Architectures: arm64
+          Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+          EOF
+          sudo apt-get update
+
+          # libwnck/GTK for trackz (with the packages in libwnck-3.0.pc's
+          # Requires.private); Gio's Wayland, X11, EGL/GLES and Vulkan
+          # headers for trackz-viz (as in ci.yml).
+          dev=(libgtk-3-dev libstartup-notification0-dev libxres-dev
+            libwayland-dev libx11-dev libx11-xcb-dev libxkbcommon-x11-dev
+            libgles-dev libegl-dev libffi-dev libxcursor-dev libvulkan-dev)
+          # qemu-user (an amd64 package) satisfies libglib2.0-dev:arm64's
+          # "python3 | qemu-user", which python3, amd64 only, cannot.
+          sudo apt-get install -y --no-install-recommends \
+            gcc pkg-config gcc-aarch64-linux-gnu qemu-user libwnck-3-dev "${dev[@]}"
+          sudo apt-get install -y --no-install-recommends \
+            libwnck-3-0:arm64 "${dev[@]/%/:arm64}"
+
+          # libwnck-3-dev can't be installed for both architectures
+          # (Multi-Arch: no); its headers are shared, so add what is per
+          # architecture by hand: the .pc file and the .so link.
+          sudo sed 's/x86_64-linux-gnu/aarch64-linux-gnu/g' \
+            /usr/lib/x86_64-linux-gnu/pkgconfig/libwnck-3.0.pc \
+            | sudo tee /usr/lib/aarch64-linux-gnu/pkgconfig/libwnck-3.0.pc >/dev/null
+          sudo ln -sf libwnck-3.so.0 /usr/lib/aarch64-linux-gnu/libwnck-3.so
+
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  darwin:
+    # After the Linux job, which creates the release (with the changelog).
+    needs: linux
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean -f .goreleaser.darwin.yaml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # GH_TOKEN: ${{ secrets.GH_TOKEN }}

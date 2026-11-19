@@ -1,0 +1,188 @@
+---
+# Linux release: tar.gz archives, deb, rpm and Arch packages for amd64 and
+# arm64. Check the documentation at https://goreleaser.com
+#
+# trackz (libwnck) and trackz-viz (Gio) need cgo, so unlike trecs they can't
+# be cross-compiled for every OS from one machine: this file builds Linux on
+# Ubuntu (arm64 with the cross compiler and the arm64 development packages,
+# see .github/workflows/release.yml), .goreleaser.darwin.yaml builds macOS on
+# macOS, and the windows-installer workflow builds the Windows MSIs.
+#
+# Try the build locally, for this machine only:
+#   goreleaser build --snapshot --clean --single-target
+version: 2
+project_name: trackz
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - &build
+    id: trackz
+    main: ./cmd/trackz
+    binary: trackz
+    env:
+      - CGO_ENABLED=1
+      # The C compiler and pkg-config's search path for the target.
+      - >-
+        CC={{ if eq .Arch "arm64" }}aarch64-linux-gnu-gcc{{ else }}gcc{{ end }}
+      - >-
+        PKG_CONFIG_LIBDIR=/usr/lib/{{ if eq .Arch "arm64" }}aarch64{{ else }}x86_64{{ end }}-linux-gnu/pkgconfig:/usr/share/pkgconfig
+    flags: [-trimpath]
+    ldflags:
+      - -s -w -X github.com/solworktech/trackz/internal/version.Version={{ .Tag }}
+    goos: [linux]
+    goarch: [amd64, arm64]
+  - <<: *build
+    id: trackz-viz
+    main: ./cmd/trackz-viz
+    binary: trackz-viz
+
+archives:
+  - formats: ["tar.gz"]
+    # this name template makes the OS and Arch compatible with `uname`.
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    # For installing by hand: the unit, the desktop entries and the icons.
+    files:
+      - LICENSE
+      - README.md
+      - packaging/systemd/trackz.service
+      - packaging/xdg/*.desktop
+      - packaging/icons/**/*
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+
+release:
+  # The windows-installer workflow may have created the release first, with
+  # no notes: put the changelog in.
+  mode: replace
+
+nfpms:
+  # deb and rpm: the unit, enabled for every user, and the autostart entry.
+  - &nfpm
+    id: packages
+    package_name: trackz
+    file_name_template: "{{ .ConventionalFileName }}"
+    homepage: https://github.com/solworktech/trackz
+    description: |-
+      Records which window has focus, and for how long, in an SQLite database,
+      and shows charts and reports of the time spent in each application and
+      window.
+
+      - trackz: the recorder, started in every user's graphical session.
+      - trackz-viz: the viewer: dashboard, top applications, time spent,
+      window activity and custom SQL queries.
+    maintainer: Jesse Portnoy <jesse@solwork.io>
+    license: AGPL-3.0-or-later
+    vendor: Solworktech
+    bindir: /usr/bin
+    section: utils
+    # The shared libraries the binaries link (readelf -d): libwnck (which
+    # brings GTK 3 and GLib) for trackz; EGL, Wayland, X11 and xkbcommon for
+    # Gio in trackz-viz. Debian/Ubuntu package names here, sonames for rpm
+    # (the same on Fedora, RHEL and openSUSE), Arch package names below.
+    dependencies:
+      - libwnck-3-0
+      - libegl1
+      - libwayland-client0
+      - libwayland-cursor0
+      - libwayland-egl1
+      - libx11-6
+      - libx11-xcb1
+      - libxcursor1
+      - libxfixes3
+      - libxkbcommon0
+      - libxkbcommon-x11-0
+    overrides:
+      rpm:
+        dependencies:
+          - libwnck-3.so.0()(64bit)
+          - libEGL.so.1()(64bit)
+          - libwayland-client.so.0()(64bit)
+          - libwayland-cursor.so.0()(64bit)
+          - libwayland-egl.so.1()(64bit)
+          - libX11.so.6()(64bit)
+          - libX11-xcb.so.1()(64bit)
+          - libXcursor.so.1()(64bit)
+          - libXfixes.so.3()(64bit)
+          - libxkbcommon.so.0()(64bit)
+          - libxkbcommon-x11.so.0()(64bit)
+    scripts:
+      postinstall: packaging/linux/postinstall.sh
+      preremove: packaging/linux/preremove.sh
+    # (Overrides would replace this list, not add to it: hence two entries
+    # and the anchors.)
+    contents:
+      - &unit
+        src: ./packaging/systemd/trackz.service
+        dst: /usr/lib/systemd/user/trackz.service
+        file_info:
+          mode: 0644
+      - &viz_desktop
+        src: ./packaging/xdg/trackz-viz.desktop
+        dst: /usr/share/applications/trackz-viz.desktop
+        file_info:
+          mode: 0644
+      # No trailing slashes: they would put every icon in one directory.
+      - &icons
+        src: ./packaging/icons/hicolor
+        dst: /usr/share/icons/hicolor
+      - &license
+        src: ./LICENSE
+        dst: /usr/share/doc/{{ .PackageName }}/copyright
+        file_info:
+          mode: 0644
+      - &readme
+        src: ./README.md
+        dst: /usr/share/doc/{{ .PackageName }}/README.md
+        file_info:
+          mode: 0644
+      # For desktops that don't start graphical-session.target (Xfce, MATE,
+      # ...), where the unit never runs: `trackz autostart` records there
+      # and steps aside where the unit runs.
+      - src: ./packaging/xdg/trackz.desktop
+        dst: /etc/xdg/autostart/trackz.desktop
+        type: config|noreplace
+        file_info:
+          mode: 0644
+    formats:
+      - deb
+      - rpm
+
+  # Arch: the unit, but, as usual there, nothing enabled and no autostart
+  # entry.
+  - <<: *nfpm
+    id: archlinux
+    dependencies:
+      - libwnck3
+      - libglvnd
+      - wayland
+      - libx11
+      - libxcursor
+      - libxfixes
+      - libxkbcommon-x11
+    overrides: {}
+    scripts: {}
+    contents: [*unit, *viz_desktop, *icons, *license, *readme]
+    formats:
+      - archlinux
+
+# The lines beneath this are called `modelines`. See `:help modeline`
+# Feel free to remove those if you don't want/use them.
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+# vim: set ts=2 sw=2 tw=0 fo=cnqoj

@@ -60,6 +60,30 @@ Notes:
 
 ## Installation
 
+### Packages
+
+Each [release](https://github.com/solworktech/trackz/releases) has:
+
+- **Debian/Ubuntu** (`.deb`) and **Fedora/RHEL/openSUSE** (`.rpm`) packages for amd64 and arm64. They install
+  `trackz` and `trackz-viz` to `/usr/bin`, the desktop entry and icons, the systemd user unit and an XDG autostart
+  entry, so `trackz` starts with every user's graphical session:
+  - The unit is enabled for every user (`systemctl --global enable trackz`). It is wanted by
+    `graphical-session.target`, which only some desktops start: the session manager has to, and GNOME's and KDE
+    Plasma's do, while Xfce's and MATE's, for example, don't.
+  - The autostart entry (`/etc/xdg/autostart/trackz.desktop`) covers the others. It runs `trackz autostart`, which
+    exits at once where the unit is enabled and `graphical-session.target` is active, and records otherwise.
+
+  Users in a graphical session during the installation get `trackz` started straight away where the unit applies
+  (elsewhere, at their next login). An upgrade restarts the unit where it runs; removal stops it and disables it. A
+  user who does not want `trackz` runs `systemctl --user mask trackz`, which `trackz autostart` respects too
+  (`disable` does not undo a global enable).
+- **Arch Linux** (`.pkg.tar.zst`): the binaries, the desktop entry, icons and the unit; as usual on Arch, nothing
+  starts by itself: `systemctl --user enable --now trackz`, or the autostart entry (see [Starting
+  automatically](#starting-automatically)).
+- **macOS**: `tar.gz` archives (see [Starting automatically](#starting-automatically) for the LaunchAgent).
+- **Windows**: the MSI installers (see [Windows installer](#windows-installer)).
+- `tar.gz` archives of the Linux binaries, with the unit, desktop entries and icons.
+
 ### Requirements
 
 - Go 1.24 or newer.
@@ -136,7 +160,8 @@ Note that a `TRACKZ_DB` set only in the systemd unit (or its `EnvironmentFile`) 
 a shell or the desktop menu. Use the default, `db_path` in `config.json` or an environment variable set for the whole
 session so both programs use the same file; `trackz-viz` warns when no `trackz` is recording to the database it shows.
 
-Only one `trackz` can record to a database at a time: a second one exits with an error naming the first one's PID. The
+Only one `trackz` can record to a database at a time: a second one exits (with status 3, which the systemd unit does
+not restart on) and an error naming the first one's PID. The
 lock file is `<database>.lock`; `trackz-viz` also uses it to tell whether `trackz` is running.
 
 `trackz` closes the open record when stopped with Ctrl-C, `SIGTERM`, `SIGHUP` (e.g. its terminal is closed) or
@@ -155,14 +180,18 @@ database, point their `TRACKZ_DB` at a shared file in a directory they can all w
 
 ### Starting automatically
 
-- **Linux/BSD with systemd**: [packaging/systemd/trackz.service](./packaging/systemd/trackz.service) is a *user* unit:
+- **Linux/BSD with systemd**: [packaging/systemd/trackz.service](./packaging/systemd/trackz.service) is a *user* unit
+  (the deb and rpm packages install and enable it):
   ```sh
   $ install -Dm644 packaging/systemd/trackz.service ~/.config/systemd/user/trackz.service
   $ systemctl --user enable --now trackz
   ```
-  Environment overrides (e.g. `TRACKZ_DB`) go in `~/.config/trackz/trackz.env`.
+  It runs `trackz` from `/usr/local/bin` or `/usr/bin`. Environment overrides (e.g. `TRACKZ_DB`) go in
+  `~/.config/trackz/trackz.env`.
 - **Any XDG desktop**: copy [packaging/xdg/trackz.desktop](./packaging/xdg/trackz.desktop) to
-  `~/.config/autostart/` (or `/etc/xdg/autostart/` for all users).
+  `~/.config/autostart/` (or `/etc/xdg/autostart/` for all users). It runs `trackz autostart`, which leaves the
+  session to the systemd unit where the unit is enabled and `graphical-session.target` is active (or where the unit
+  is masked), so the two can be installed together.
 - **macOS**: see [packaging/launchd/org.solworktech.trackz.plist](./packaging/launchd/org.solworktech.trackz.plist).
 - **Windows**: the installer (below) offers it; without the installer,
   `powershell -ExecutionPolicy Bypass -File packaging\windows\install-autostart.ps1 -Exe C:\path\to\trackz.exe`.
@@ -191,6 +220,18 @@ them to the release for a `v*` tag. By hand, on Windows with the .NET SDK and th
 PS> dotnet build packaging\windows\wix\Trackz.wixproj -c Release -p:Platform=x64 -p:TrackzVersion=1.2.3
 ```
 The banner, side image and `License.rtf` are generated (`make icons`) from the logo and `LICENSE`.
+
+### Releasing
+
+Pushing a `v*` tag runs the [release](./.github/workflows/release.yml) workflow, with
+[GoReleaser](https://goreleaser.com). `trackz` and `trackz-viz` need cgo, so they are built on each OS rather than
+cross-compiled from one: [.goreleaser.yaml](./.goreleaser.yaml) on Ubuntu (amd64, and arm64 with the cross compiler)
+makes the release with the changelog, the Linux archives and the deb, rpm and Arch packages;
+[.goreleaser.darwin.yaml](./.goreleaser.darwin.yaml) on macOS then adds the macOS archives (its Homebrew formula is
+commented out for now). The Windows MSIs come from the windows-installer workflow. The deb and rpm scripts are in
+[packaging/linux](./packaging/linux). There are no BSD binaries: build from source there.
+
+To try the build locally, for this machine only: `goreleaser build --snapshot --clean --single-target`.
 
 ## Visualisation: `trackz-viz`
 

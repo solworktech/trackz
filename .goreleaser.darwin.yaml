@@ -1,0 +1,101 @@
+---
+# macOS release: tar.gz archives for amd64 and arm64 (the Homebrew formula
+# is commented out for now). Runs on macOS (cgo with the AppKit frameworks),
+# after the Linux release (.goreleaser.yaml) has created the GitHub release;
+# see .github/workflows/release.yml.
+#
+# Try it locally with:
+#   goreleaser release --snapshot --clean -f .goreleaser.darwin.yaml
+version: 2
+project_name: trackz
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - &build
+    id: trackz
+    main: ./cmd/trackz
+    binary: trackz
+    # Apple's clang builds for either architecture on either Mac.
+    env: [CGO_ENABLED=1]
+    flags: [-trimpath]
+    ldflags:
+      - -s -w -X github.com/solworktech/trackz/internal/version.Version={{ .Tag }}
+    goos: [darwin]
+    goarch: [amd64, arm64]
+  - <<: *build
+    id: trackz-viz
+    main: ./cmd/trackz-viz
+    binary: trackz-viz
+
+archives:
+  - formats: ["tar.gz"]
+    # this name template makes the OS and Arch compatible with `uname`.
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    files:
+      - LICENSE
+      - README.md
+      - packaging/launchd/org.solworktech.trackz.plist
+
+checksum:
+  # Not checksums.txt: the Linux release uploads that one.
+  name_template: checksums-darwin.txt
+
+changelog:
+  disable: true
+
+release:
+  # Add the archives to the release the Linux job made; keep its notes.
+  mode: keep-existing
+
+# The Homebrew formula, for later (needs the solworktech/homebrew-trackz
+# repository, and GH_TOKEN in release.yml).
+# brews:
+#   - name: trackz
+#     commit_author:
+#       name: jessp01
+#       email: jesse@solwork.io
+#     commit_msg_template: "Brew formula update for {{ .ProjectName }} version {{ .Tag }}"
+#     directory: Formula
+#     homepage: https://github.com/solworktech/trackz
+#     description: Record time spent in windows and applications, and chart it
+#     license: "AGPL-3.0-or-later"
+#     install: |
+#       bin.install "trackz"
+#       bin.install "trackz-viz"
+#     # `brew services start trackz` runs the recorder at login (a LaunchAgent,
+#     # like packaging/launchd/org.solworktech.trackz.plist).
+#     service: |
+#       run [opt_bin/"trackz", "run"]
+#       keep_alive successful_exit: false
+#       log_path var/"log/trackz.log"
+#       error_log_path var/"log/trackz.log"
+#     caveats: |
+#       To record from login on, start the recorder as a service:
+#         brew services start trackz
+#       Then allow trackz under System Settings > Privacy & Security >
+#       Accessibility (it needs that to read window titles) and restart it:
+#         brew services restart trackz
+#       macOS ties that permission to the binary, so after `brew upgrade` you
+#       may have to allow it again.
+#     test: |
+#       system "#{bin}/trackz", "version"
+#     # Repository to push the generated files to.
+#     repository:
+#       owner: solworktech
+#       name: homebrew-trackz
+#       branch: main
+#       token: "{{ .Env.GH_TOKEN }}"
+
+# The lines beneath this are called `modelines`. See `:help modeline`
+# Feel free to remove those if you don't want/use them.
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+# vim: set ts=2 sw=2 tw=0 fo=cnqoj
