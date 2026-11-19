@@ -4,8 +4,8 @@
 #
 # trackz (libwnck) and trackz-viz (Gio) need cgo, so unlike trecs they can't
 # be cross-compiled for every OS from one machine: this file builds Linux on
-# Ubuntu (arm64 with the cross compiler and the arm64 development packages,
-# see .github/workflows/release.yml), .goreleaser.darwin.yaml builds macOS on
+# Ubuntu (arm64 with the cross compiler and an arm64 sysroot, see
+# .github/workflows/release.yml), .goreleaser.darwin.yaml builds macOS on
 # macOS, and the windows-installer workflow builds the Windows MSIs.
 #
 # Try the build locally, for this machine only:
@@ -24,11 +24,16 @@ builds:
     binary: trackz
     env:
       - CGO_ENABLED=1
-      # The C compiler and pkg-config's search path for the target.
+      # arm64 is cross-compiled against the sysroot in /opt/sysroot-arm64
+      # (an arm64 Ubuntu with the -dev packages; see release.yml): the
+      # cross compiler and pkg-config's search path, with -I/-L paths
+      # prefixed, point there. amd64 uses the system's.
       - >-
-        CC={{ if eq .Arch "arm64" }}aarch64-linux-gnu-gcc{{ else }}gcc{{ end }}
+        CC={{ if eq .Arch "arm64" }}aarch64-linux-gnu-gcc --sysroot=/opt/sysroot-arm64{{ else }}gcc{{ end }}
       - >-
-        PKG_CONFIG_LIBDIR=/usr/lib/{{ if eq .Arch "arm64" }}aarch64{{ else }}x86_64{{ end }}-linux-gnu/pkgconfig:/usr/share/pkgconfig
+        PKG_CONFIG_SYSROOT_DIR={{ if eq .Arch "arm64" }}/opt/sysroot-arm64{{ end }}
+      - >-
+        PKG_CONFIG_LIBDIR={{ if eq .Arch "arm64" }}/opt/sysroot-arm64/usr/lib/aarch64-linux-gnu/pkgconfig:/opt/sysroot-arm64/usr/share/pkgconfig{{ else }}/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/share/pkgconfig{{ end }}
     flags: [-trimpath]
     ldflags:
       - -s -w -X github.com/solworktech/trackz/internal/version.Version={{ .Tag }}

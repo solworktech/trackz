@@ -17,8 +17,6 @@ permissions:
 
 jobs:
   linux:
-    # Not ubuntu-latest: the arm64 setup below edits this release's apt
-    # sources (deb822 format, ports.ubuntu.com for arm64).
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -29,44 +27,43 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Install build dependencies (amd64, and arm64 to cross-compile)
+      # For apt in the arm64 container below.
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Install build dependencies (amd64, and an arm64 sysroot)
         run: |
           set -eu
-          codename=$(. /etc/os-release && echo "$VERSION_CODENAME")
-          # arm64 packages come from ports.ubuntu.com: keep the existing
-          # sources to amd64 and add the ports for arm64.
-          sudo dpkg --add-architecture arm64
-          sudo sed -i '/^Types:/a Architectures: amd64' /etc/apt/sources.list.d/ubuntu.sources
-          sudo tee /etc/apt/sources.list.d/ubuntu-ports.sources >/dev/null <<EOF
-          Types: deb
-          URIs: http://ports.ubuntu.com/ubuntu-ports/
-          Suites: $codename $codename-updates $codename-security
-          Components: main universe
-          Architectures: arm64
-          Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
-          EOF
-          sudo apt-get update
-
-          # libwnck/GTK for trackz (with the packages in libwnck-3.0.pc's
-          # Requires.private); Gio's Wayland, X11, EGL/GLES and Vulkan
+          # libwnck/GTK for trackz; Gio's Wayland, X11, EGL/GLES and Vulkan
           # headers for trackz-viz (as in ci.yml).
-          dev=(libgtk-3-dev libstartup-notification0-dev libxres-dev
-            libwayland-dev libx11-dev libx11-xcb-dev libxkbcommon-x11-dev
-            libgles-dev libegl-dev libffi-dev libxcursor-dev libvulkan-dev)
-          # qemu-user (an amd64 package) satisfies libglib2.0-dev:arm64's
-          # "python3 | qemu-user", which python3, amd64 only, cannot.
+          dev=(libwnck-3-dev libgtk-3-dev libwayland-dev libx11-dev
+            libx11-xcb-dev libxkbcommon-x11-dev libgles-dev libegl-dev
+            libffi-dev libxcursor-dev libvulkan-dev)
+          sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            gcc pkg-config gcc-aarch64-linux-gnu qemu-user libwnck-3-dev "${dev[@]}"
-          sudo apt-get install -y --no-install-recommends \
-            libwnck-3-0:arm64 "${dev[@]/%/:arm64}"
+            gcc pkg-config gcc-aarch64-linux-gnu "${dev[@]}"
 
-          # libwnck-3-dev can't be installed for both architectures
-          # (Multi-Arch: no); its headers are shared, so add what is per
-          # architecture by hand: the .pc file and the .so link.
-          sudo sed 's/x86_64-linux-gnu/aarch64-linux-gnu/g' \
-            /usr/lib/x86_64-linux-gnu/pkgconfig/libwnck-3.0.pc \
-            | sudo tee /usr/lib/aarch64-linux-gnu/pkgconfig/libwnck-3.0.pc >/dev/null
-          sudo ln -sf libwnck-3.so.0 /usr/lib/aarch64-linux-gnu/libwnck-3.so
+          # arm64: the same packages, installed by apt in an arm64 Ubuntu
+          # container (under QEMU) and copied out as a sysroot for the cross
+          # compiler (see the CC and PKG_CONFIG_* settings in
+          # .goreleaser.yaml). Installing them next to the amd64 ones
+          # (multiarch) does not work: some files that must be identical in
+          # both, such as Pango-1.0.gir, are not.
+          sysroot=/opt/sysroot-arm64
+          docker run --platform linux/arm64 --name sysroot ubuntu:24.04 \
+            sh -c 'apt-get update && DEBIAN_FRONTEND=noninteractive \
+              apt-get install -y --no-install-recommends libc6-dev "$@"' \
+            sh "${dev[@]}"
+          sudo mkdir -p "$sysroot"
+          docker export sysroot | sudo tar -x -C "$sysroot" \
+            --exclude='dev/*' --exclude='proc/*' --exclude='sys/*'
+          docker rm sysroot >/dev/null
+          # Absolute symlinks would point into this machine: rebase them.
+          sudo find "$sysroot/usr/lib" -type l -lname '/*' -print0 |
+            while IFS= read -r -d '' link; do
+              sudo ln -sfn "$sysroot$(readlink "$link")" "$link"
+            done
 
       - uses: goreleaser/goreleaser-action@v6
         with:

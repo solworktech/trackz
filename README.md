@@ -227,8 +227,9 @@ The banner, side image and `License.rtf` are generated (`make icons`) from the l
 
 Pushing a `v*` tag runs the [release](./.github/workflows/release.yml) workflow, with
 [GoReleaser](https://goreleaser.com). `trackz` and `trackz-viz` need cgo, so they are built on each OS rather than
-cross-compiled from one: [.goreleaser.yaml](./.goreleaser.yaml) on Ubuntu (amd64, and arm64 with the cross compiler)
-makes the release with the changelog, the Linux archives and the deb, rpm and Arch packages;
+cross-compiled from one: [.goreleaser.yaml](./.goreleaser.yaml) on Ubuntu (amd64, and arm64 with the cross compiler and
+an arm64 sysroot made in a container) makes the release with the changelog, the Linux archives and the deb, rpm and
+Arch packages;
 [.goreleaser.darwin.yaml](./.goreleaser.darwin.yaml) on macOS then adds the macOS archives (its Homebrew formula is
 commented out for now). The Windows MSIs come from the windows-installer workflow. The deb and rpm scripts are in
 [packaging/linux](./packaging/linux). There are no BSD binaries: build from source there.
