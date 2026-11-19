@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 	"unsafe"
@@ -49,6 +50,7 @@ var (
 	procDestroyWindow        = user32.NewProc("DestroyWindow")
 	procDefWindowProcW       = user32.NewProc("DefWindowProcW")
 	procEnumChildWindows     = user32.NewProc("EnumChildWindows")
+	procGetClassNameW        = user32.NewProc("GetClassNameW")
 	procGetModuleHandleW     = kernel.NewProc("GetModuleHandleW")
 	procWTSRegister          = wtsapi.NewProc("WTSRegisterSessionNotification")
 	procWTSUnRegister        = wtsapi.NewProc("WTSUnRegisterSessionNotification")
@@ -59,6 +61,7 @@ var (
 
 const (
 	eventSystemForeground  = 0x0003
+	eventSystemSwitchEnd   = 0x0015
 	eventSystemMinimizeEnd = 0x0017
 	eventObjectNameChange  = 0x800C
 	winEventOutOfContext   = 0x0000
@@ -67,6 +70,7 @@ const (
 	childidSelf            = 0
 
 	wmQuit              = 0x0012
+	wmCheckForeground   = 0x8000 + 1 // WM_APP+1, posted to the hook thread
 	wmPowerBroadcast    = 0x0218
 	wmWTSSessionChange  = 0x02B1
 	pbtAPMSuspend       = 0x0004
@@ -105,7 +109,16 @@ type wndClassEx struct {
 var (
 	winMu    sync.Mutex
 	winSink  Sink
+	winOpts  BackendOptions
 	winProcs = newProcCache()
+	// The hook thread, for wmCheckForeground, and a channel closed when
+	// Run returns.
+	winThread  uint32
+	winStopped chan struct{}
+
+	// switcherUp is set while the foreground window is the shell's task
+	// switcher (see isTaskSwitcher), and the foreground is polled.
+	switcherUp atomic.Bool
 
 	// Callbacks are created once: Windows limits the number of callbacks a
 	// process can create with syscall.NewCallback.
@@ -118,17 +131,23 @@ func (b *windowsBackend) Run(ctx context.Context, sink Sink) error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
+	threadID := windows.GetCurrentThreadId()
+	stopped := make(chan struct{})
+	defer close(stopped)
+
 	winMu.Lock()
-	winSink = sink
+	winSink, winOpts = sink, b.opts
+	winThread, winStopped = threadID, stopped
 	winMu.Unlock()
 	defer func() {
 		winMu.Lock()
 		winSink = nil
 		winMu.Unlock()
+		switcherUp.Store(false)
 	}()
 
 	var hooks []uintptr
-	for _, ev := range []uintptr{eventSystemForeground, eventSystemMinimizeEnd, eventObjectNameChange} {
+	for _, ev := range []uintptr{eventSystemForeground, eventSystemSwitchEnd, eventSystemMinimizeEnd, eventObjectNameChange} {
 		h, _, err := procSetWinEventHook.Call(ev, ev, 0, winEventCallback, 0, 0,
 			winEventOutOfContext|winEventSkipOwnProcess)
 		if h == 0 {
@@ -157,9 +176,6 @@ func (b *windowsBackend) Run(ctx context.Context, sink Sink) error {
 		}
 	}
 
-	threadID := windows.GetCurrentThreadId()
-	stopped := make(chan struct{})
-	defer close(stopped)
 	go func() {
 		select {
 		case <-ctx.Done():
@@ -183,9 +199,7 @@ func (b *windowsBackend) Run(ctx context.Context, sink Sink) error {
 		}
 	}()
 
-	if fg, _, _ := procGetForegroundWindow.Call(); fg != 0 {
-		reportWindow(fg)
-	}
+	checkForeground()
 	var m msg
 	for {
 		r, _, err := procGetMessageW.Call(uintptr(unsafe.Pointer(&m)), 0, 0, 0)
@@ -194,6 +208,10 @@ func (b *windowsBackend) Run(ctx context.Context, sink Sink) error {
 			return fmt.Errorf("GetMessage: %v", err)
 		case 0: // WM_QUIT
 			return nil
+		}
+		if m.hwnd == 0 && m.message == wmCheckForeground {
+			checkForeground()
+			continue
 		}
 		// Their results only say whether a translation happened and what
 		// the window procedure returned.
@@ -209,6 +227,9 @@ func winEventProc(hook, event, hwnd, idObject, idChild, thread, evTime uintptr) 
 	switch event {
 	case eventSystemForeground, eventSystemMinimizeEnd:
 		reportWindow(hwnd)
+	case eventSystemSwitchEnd:
+		// Alt+Tab ended: hwnd is the switcher; report what it activated.
+		checkForeground()
 	case eventObjectNameChange:
 		// Title changes of background windows are ignored.
 		if fg, _, _ := procGetForegroundWindow.Call(); fg == hwnd {
@@ -225,6 +246,13 @@ func reportWindow(hwnd uintptr) {
 	if sink == nil {
 		return
 	}
+	if isTaskSwitcher(hwnd) {
+		// Not an application: keep the previous window, and find out
+		// which window the switcher activates.
+		watchSwitcher()
+		return
+	}
+	switcherUp.Store(false)
 	w := Window{Title: windowText(hwnd)}
 	var pid uint32
 	if _, err := windows.GetWindowThreadProcessId(windows.HWND(hwnd), &pid); err != nil || pid == 0 {
@@ -246,6 +274,75 @@ func reportWindow(hwnd uintptr) {
 		w.AppName = w.ProcessName
 	}
 	sink.WindowChanged(w)
+}
+
+// switcherClasses are the window classes of explorer's task switching UI,
+// which takes the foreground while it is up: Alt+Tab (TaskSwitcherWnd up to
+// Windows 8, MultitaskingViewFrame on 10, XamlExplorerHostIslandWindow on
+// 11, which also hosts Task View) and ForegroundStaging, a window explorer
+// briefly activates while switching. Their titles ("Task Switching") are
+// localised; the classes are not.
+var switcherClasses = map[string]bool{
+	"TaskSwitcherWnd":              true,
+	"MultitaskingViewFrame":        true,
+	"XamlExplorerHostIslandWindow": true,
+	"ForegroundStaging":            true,
+}
+
+// isTaskSwitcher reports whether hwnd is explorer's task switching UI.
+func isTaskSwitcher(hwnd uintptr) bool {
+	var buf [64]uint16
+	n, _, _ := procGetClassNameW.Call(hwnd, uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
+	if n == 0 || !switcherClasses[windows.UTF16ToString(buf[:n])] {
+		return false
+	}
+	var pid uint32
+	if _, err := windows.GetWindowThreadProcessId(windows.HWND(hwnd), &pid); err != nil || pid == 0 {
+		return false
+	}
+	info, _ := processDetails(pid)
+	return strings.EqualFold(info.Name, "explorer")
+}
+
+// switcherPoll is how often the foreground is checked while the task
+// switcher has it.
+const switcherPoll = 250 * time.Millisecond
+
+// watchSwitcher polls the foreground window while the task switcher has it:
+// Windows does not always send EVENT_SYSTEM_FOREGROUND for the window
+// picked with Alt+Tab, notably when it is the one that had the foreground
+// before. The checks run on the hook thread (wmCheckForeground) and stop
+// once a window other than the switcher has the foreground, or Run returns.
+func watchSwitcher() {
+	if switcherUp.Swap(true) {
+		return // already polling
+	}
+	winMu.Lock()
+	thread, stopped, opts := winThread, winStopped, winOpts
+	winMu.Unlock()
+	opts.debugf("task switcher has the foreground; waiting for the window it activates")
+	go func() {
+		t := time.NewTicker(switcherPoll)
+		defer t.Stop()
+		for switcherUp.Load() {
+			select {
+			case <-stopped:
+				return
+			case <-t.C:
+			}
+			if r, _, err := procPostThreadMessageW.Call(uintptr(thread), wmCheckForeground, 0, 0); r == 0 {
+				opts.debugf("PostThreadMessage(check foreground): %v", err)
+			}
+		}
+	}()
+}
+
+// checkForeground reports the foreground window, if there is one (there
+// is none for a moment while the foreground changes).
+func checkForeground() {
+	if fg, _, _ := procGetForegroundWindow.Call(); fg != 0 {
+		reportWindow(fg)
+	}
 }
 
 func windowText(hwnd uintptr) string {

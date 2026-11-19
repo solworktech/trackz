@@ -49,6 +49,8 @@ Notes:
   from) under *System Settings → Privacy & Security → Accessibility*. Without it, application switches are still
   recorded, with the application name as the window title.
 - Only the title changes of the **focused** window are recorded.
+- On Windows, explorer's task switching UI (Alt+Tab, Task View) is not recorded: the previous window stays current
+  until the switcher activates another one.
 
 **Pro tips**
 
