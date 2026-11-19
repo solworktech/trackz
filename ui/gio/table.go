@@ -2,13 +2,17 @@ package gio
 
 import (
 	"image"
+	"image/color"
 	"slices"
 	"strings"
 
+	"gioui.org/f32"
 	"gioui.org/io/pointer"
 	"gioui.org/layout"
+	"gioui.org/op/clip"
 	"gioui.org/op/paint"
 	"gioui.org/text"
+	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
 
@@ -148,23 +152,40 @@ func (tv *tableView) layout(gtx C, th *material.Theme, t *store.Table, cols []ta
 	}
 	order := tv.rowOrder(t, cols)
 
+	// The rows' list keeps room for its scrollbar only when they do not all
+	// fit (as in the last frame); the header leaves the same room, so its
+	// titles line up with the values below.
+	tv.list.Axis = layout.Vertical
+	list := material.List(th, &tv.list)
+	pos := tv.list.Position
+	if pos.First == 0 && pos.Offset == 0 && pos.Count == len(order) && pos.OffsetLast >= 0 {
+		list.AnchorStrategy = material.Overlay
+	}
+	barW := 0
+	if list.AnchorStrategy == material.Occupy {
+		barW = gtx.Dp(list.Width())
+	}
+
 	rowH := gtx.Dp(26)
-	cell := func(gtx C, c int, label string, header bool, icon *paint.ImageOp) D {
+	cell := func(gtx C, c int, label string, icon *paint.ImageOp) D {
 		gtx.Constraints.Min.Y = rowH
-		return layout.Inset{Left: 6, Right: 6, Top: 4}.Layout(gtx, func(gtx C) D {
+		right := unit.Dp(6)
+		if cols[c].right {
+			// End where the title does, with its sort icon after it.
+			right += sortIconW + sortIconGap
+		}
+		return layout.Inset{Left: 6, Right: right, Top: 4}.Layout(gtx, func(gtx C) D {
 			gtx.Constraints.Min.X = gtx.Constraints.Max.X
 			l := material.Label(th, 13, label)
 			l.MaxLines = 1
 			l.Truncator = "…"
-			if header {
-				l.Font.Weight = 600
-			}
 			if cols[c].right {
 				l.Alignment = text.End
 			}
-			if icon == nil {
+			if cols[c].icon == nil {
 				return l.Layout(gtx)
 			}
+			// A row without an icon keeps the space, so names line up.
 			return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 				layout.Rigid(func(gtx C) D {
 					return layout.Inset{Right: 6}.Layout(gtx, func(gtx C) D { return layoutIcon(gtx, icon, 16) })
@@ -173,32 +194,56 @@ func (tv *tableView) layout(gtx C, th *material.Theme, t *store.Table, cols []ta
 			)
 		})
 	}
+	// headerCell is a column title with its sort icon after it. In
+	// right-aligned columns the values leave room for the icon, so the
+	// title ends where they do.
+	headerCell := func(gtx C, c int) D {
+		gtx.Constraints.Min.Y = rowH
+		state := 0 // not sorted by this column
+		if tv.sortCol == c {
+			state = 1
+			if tv.desc {
+				state = -1
+			}
+		}
+		return layout.Inset{Left: 6, Right: 6, Top: 4}.Layout(gtx, func(gtx C) D {
+			gtx.Constraints.Min.X = gtx.Constraints.Max.X
+			l := material.Label(th, 13, cols[c].title)
+			l.MaxLines = 1
+			l.Truncator = "…"
+			l.Font.Weight = 600
+			// Raised a little to sit level with the letters, not the line box.
+			icon := layout.Rigid(func(gtx C) D {
+				return layout.Inset{Bottom: 4}.Layout(gtx, func(gtx C) D { return sortIcon(gtx, state) })
+			})
+			gap := layout.Rigid(layout.Spacer{Width: sortIconGap}.Layout)
+			spacing := layout.SpaceEnd
+			if cols[c].right {
+				spacing = layout.SpaceStart
+			}
+			return layout.Flex{Alignment: layout.Middle, Spacing: spacing}.Layout(gtx, layout.Rigid(l.Layout), gap, icon)
+		})
+	}
 	header := func(gtx C) D {
 		fillRect(gtx, image.Rect(0, 0, gtx.Constraints.Max.X, rowH), cs.header)
+		gtx.Constraints.Max.X -= barW
 		children := make([]layout.FlexChild, len(cols))
 		for c := range cols {
 			children[c] = layout.Flexed(cols[c].weight, func(gtx C) D {
-				title := cols[c].title
-				if tv.sortCol == c {
-					if tv.desc {
-						title += " ▼"
-					} else {
-						title += " ▲"
-					}
-				}
 				return tv.headers[c].Layout(gtx, func(gtx C) D {
 					pointer.CursorPointer.Add(gtx.Ops)
-					return cell(gtx, c, title, true, nil)
+					return headerCell(gtx, c)
 				})
 			})
 		}
-		return layout.Flex{}.Layout(gtx, children...)
+		d := layout.Flex{}.Layout(gtx, children...)
+		d.Size.X += barW
+		return d
 	}
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(header),
 		layout.Flexed(1, func(gtx C) D {
-			tv.list.Axis = layout.Vertical
-			return material.List(th, &tv.list).Layout(gtx, len(order), func(gtx C, i int) D {
+			return list.Layout(gtx, len(order), func(gtx C, i int) D {
 				r := order[i]
 				if i%2 == 1 {
 					fillRect(gtx, image.Rect(0, 0, gtx.Constraints.Max.X, rowH), cs.stripe)
@@ -210,11 +255,53 @@ func (tv *tableView) layout(gtx C, th *material.Theme, t *store.Table, cols []ta
 						if cols[c].icon != nil {
 							icon = cols[c].icon(r)
 						}
-						return cell(gtx, c, t.Rows[r][cols[c].src].String(), false, icon)
+						return cell(gtx, c, t.Rows[r][cols[c].src].String(), icon)
 					})
 				}
 				return layout.Flex{}.Layout(gtx, children...)
 			})
 		}),
 	)
+}
+
+// sortIconW is the sort icon's width, and sortIconGap the space between
+// it and the column title.
+const (
+	sortIconW   unit.Dp = 8
+	sortIconGap unit.Dp = 4
+)
+
+// sortIcon draws the sort indicator of a column title: two small
+// triangles, up and down. Unsorted columns show both faintly, to say the
+// column can be sorted; the sorted one shows the direction in full
+// colour (1 ascending, -1 descending).
+func sortIcon(gtx C, state int) D {
+	w, h := gtx.Dp(sortIconW), gtx.Dp(13)
+	gap := float32(gtx.Dp(1))
+	faint := cs.muted
+	faint.A = 0xa0
+	up, down := faint, faint
+	switch state {
+	case 1:
+		up, down = cs.fg, color.NRGBA{}
+	case -1:
+		up, down = color.NRGBA{}, cs.fg
+	}
+	fw, fh := float32(w), float32(h)
+	tri := func(a, b, c f32.Point, col color.NRGBA) {
+		if col.A == 0 {
+			return
+		}
+		var p clip.Path
+		p.Begin(gtx.Ops)
+		p.MoveTo(a)
+		p.LineTo(b)
+		p.LineTo(c)
+		p.Close()
+		paint.FillShape(gtx.Ops, col, clip.Outline{Path: p.End()}.Op())
+	}
+	mid := fh / 2
+	tri(f32.Pt(0, mid-gap), f32.Pt(fw, mid-gap), f32.Pt(fw/2, 0), up)
+	tri(f32.Pt(0, mid+gap), f32.Pt(fw, mid+gap), f32.Pt(fw/2, fh), down)
+	return D{Size: image.Pt(w, h)}
 }

@@ -137,16 +137,23 @@ LIMIT 20
 // New creates the UI for svc. Its windows are created with opts.
 func New(svc *report.Service, opts ...app.Option) *UI {
 	u := &UI{
-		svc:     svc,
-		opts:    opts,
-		wake:    make(chan struct{}, 1),
-		th:      material.NewTheme(),
-		icons:   newIconCache(),
-		logo:    logoOp(),
-		tabs:    make([]widget.Clickable, len(report.Views)),
-		presets: make([]widget.Clickable, len(report.Presets)+1),
-		rng:     report.Preset(report.Today),
-		results: map[report.View]*viewData{},
+		// Time Spent's pie is 25% smaller than the space allows, and its
+		// labels are short (application names).
+		spentPie: pieChart{scale: 0.75, compact: true},
+		// Window Activity's hover box shows the window switches, not the
+		// time: a record's time all counts where it started, which reads
+		// as more (or less) than the bucket really had.
+		activity: lineChart{hideValue: true},
+		svc:      svc,
+		opts:     opts,
+		wake:     make(chan struct{}, 1),
+		th:       material.NewTheme(),
+		icons:    newIconCache(),
+		logo:     logoOp(),
+		tabs:     make([]widget.Clickable, len(report.Views)),
+		presets:  make([]widget.Clickable, len(report.Presets)+1),
+		rng:      report.Preset(report.Today),
+		results:  map[report.View]*viewData{},
 	}
 	// System fonts as before, plus Go Mono (bundled) for the SQL editor.
 	u.th.Shaper = text.NewShaper(text.WithCollection(monoFaces()))

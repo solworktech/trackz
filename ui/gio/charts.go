@@ -13,6 +13,9 @@ import (
 	"gioui.org/op"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
+	"gioui.org/text"
+	"gioui.org/unit"
+	"gioui.org/widget"
 	"gioui.org/widget/material"
 
 	"github.com/solworktech/trackz/internal/report"
@@ -56,7 +59,12 @@ func pct(v, total float64) string {
 // pieChart draws a pie with a legend (icon, label, value, share) beside it.
 type pieChart struct {
 	hover  hover
-	legend layout.List
+	legend widget.List
+	// scale is the pie's diameter relative to the room it has (0 means 1).
+	scale float32
+	// compact puts each value right after the longest label instead of at
+	// the right edge: for short labels (application names).
+	compact bool
 }
 
 func (pc *pieChart) layout(gtx C, th *material.Theme, ic *iconCache, s report.Series) D {
@@ -64,14 +72,27 @@ func (pc *pieChart) layout(gtx C, th *material.Theme, ic *iconCache, s report.Se
 	if len(s.Points) == 0 || total <= 0 {
 		return emptyChart(gtx, th)
 	}
-	// The pie takes 55% of the width (as a square, so possibly less of the
-	// height); the legend is centred vertically against it, or starts at
-	// the top and scrolls if it is taller.
+	// The pie is centred in the left 55% of the width, as large as that
+	// and the height allow (it is round). The legend starts pieGap after
+	// the pie rather than at 55%, so when the height limits the pie the
+	// legend gets the width beside it. It is centred vertically against
+	// the pie, or starts at the top and scrolls if it is taller.
 	width := gtx.Constraints.Max.X
-	pieW := width * 55 / 100
+	colW := width * 55 / 100
+	side := min(colW, gtx.Constraints.Max.Y)
+	if pc.scale > 0 && pc.scale < 1 {
+		side = int(float32(side) * pc.scale)
+	}
 	pg := gtx
-	pg.Constraints = layout.Constraints{Max: image.Pt(pieW, gtx.Constraints.Max.Y)}
+	pg.Constraints = layout.Constraints{Max: image.Pt(side, side)}
+	pm := op.Record(gtx.Ops)
 	pd := pc.pie(pg, th, ic, s, total)
+	pie := pm.Stop()
+	pieX := (colW - pd.Size.X) / 2
+	ps := op.Offset(image.Pt(pieX, 0)).Push(gtx.Ops)
+	pie.Add(gtx.Ops)
+	ps.Pop()
+	pieW := min(colW, pieX+pd.Size.X+gtx.Dp(pieGap)) // where the legend starts
 
 	lg := gtx
 	lg.Constraints = layout.Constraints{Max: image.Pt(width-pieW, gtx.Constraints.Max.Y)}
@@ -84,6 +105,13 @@ func (pc *pieChart) layout(gtx C, th *material.Theme, ic *iconCache, s report.Se
 	st.Pop()
 	return D{Size: image.Pt(width, max(pd.Size.Y, top+ld.Size.Y))}
 }
+
+// legendValueGap is the space before the values in a compact legend.
+const legendValueGap unit.Dp = 24
+
+// pieGap is the space between a pie (whose drawing keeps a 12 dp margin
+// of its own) and its legend.
+const pieGap unit.Dp = 24
 
 func (pc *pieChart) pie(gtx C, th *material.Theme, ic *iconCache, s report.Series, total float64) D {
 	size := gtx.Constraints.Max
@@ -211,9 +239,60 @@ func drawSlice(gtx C, c f32.Point, r float32, start, sweep float64, col color.NR
 
 func (pc *pieChart) legendList(gtx C, th *material.Theme, ic *iconCache, s report.Series, total float64) D {
 	pc.legend.Axis = layout.Vertical
-	return pc.legend.Layout(gtx, len(s.Points), func(gtx C, i int) D {
+	// The scrollbar shows (and takes room) only when the legend does not
+	// fit: when it all fitted in the last frame, the bar is not reserved.
+	pos := pc.legend.Position
+	fits := pos.First == 0 && pos.Offset == 0 && pos.Count == len(s.Points) && pos.OffsetLast >= 0
+	list := material.List(th, &pc.legend)
+	// Space between the values and the scrollbar: the same as in tables,
+	// whose right-aligned values leave room for the sort icon.
+	var barGap unit.Dp
+	if fits {
+		list.AnchorStrategy = material.Overlay
+	} else {
+		barGap = 6 + sortIconW + sortIconGap
+	}
+	// In a compact legend, labels and values are columns as wide as their
+	// widest entry (labels at most what the row leaves them).
+	values := make([]string, len(s.Points))
+	labelW, valueW := 0, 0
+	for i, p := range s.Points {
+		values[i] = s.FormatValue(p.Value) + "  " + pct(p.Value, total)
+		if pc.compact {
+			labelW = max(labelW, measure(gtx, th, 13, p.Label).X)
+			valueW = max(valueW, measure(gtx, th, 13, values[i]).X)
+		}
+	}
+	if pc.compact {
+		fixed := gtx.Dp(12+6) + gtx.Dp(18+6) + gtx.Dp(legendValueGap) + valueW + gtx.Dp(barGap)
+		labelW = min(labelW, max(0, gtx.Constraints.Max.X-fixed))
+	}
+	return list.Layout(gtx, len(s.Points), func(gtx C, i int) D {
 		p := s.Points[i]
-		return layout.Inset{Top: 2, Bottom: 2}.Layout(gtx, func(gtx C) D {
+		label := layout.Flexed(1, func(gtx C) D { return truncLabel(gtx, th, 13, cs.fg, p.Label) })
+		value := layout.Rigid(func(gtx C) D {
+			return layout.Inset{Left: 8}.Layout(gtx, func(gtx C) D {
+				l := material.Label(th, 13, values[i])
+				l.Color = cs.muted
+				return l.Layout(gtx)
+			})
+		})
+		if pc.compact {
+			label = layout.Rigid(func(gtx C) D {
+				gtx.Constraints.Min.X, gtx.Constraints.Max.X = labelW, labelW
+				return truncLabel(gtx, th, 13, cs.fg, p.Label)
+			})
+			value = layout.Rigid(func(gtx C) D {
+				return layout.Inset{Left: legendValueGap}.Layout(gtx, func(gtx C) D {
+					gtx.Constraints.Min.X, gtx.Constraints.Max.X = valueW, valueW
+					l := material.Label(th, 13, values[i])
+					l.Color = cs.muted
+					l.Alignment = text.End
+					return l.Layout(gtx)
+				})
+			})
+		}
+		return layout.Inset{Top: 2, Bottom: 2, Right: barGap}.Layout(gtx, func(gtx C) D {
 			return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 				layout.Rigid(func(gtx C) D {
 					sz := gtx.Dp(12)
@@ -225,14 +304,8 @@ func (pc *pieChart) legendList(gtx C, th *material.Theme, ic *iconCache, s repor
 						return layoutIcon(gtx, ic.get(p), 18)
 					})
 				}),
-				layout.Flexed(1, func(gtx C) D { return truncLabel(gtx, th, 13, cs.fg, p.Label) }),
-				layout.Rigid(func(gtx C) D {
-					return layout.Inset{Left: 8}.Layout(gtx, func(gtx C) D {
-						l := material.Label(th, 13, s.FormatValue(p.Value)+"  "+pct(p.Value, total))
-						l.Color = cs.muted
-						return l.Layout(gtx)
-					})
-				}),
+				label,
+				value,
 			)
 		})
 	})
@@ -326,7 +399,12 @@ func (cc *columnChart) layout(gtx C, th *material.Theme, s report.Series) D {
 }
 
 // lineChart draws a polyline with markers and hover details.
-type lineChart struct{ hover hover }
+type lineChart struct {
+	hover hover
+	// hideValue leaves the value out of the hover box (Window Activity:
+	// its time per bucket is misleading; the window switches are kept).
+	hideValue bool
+}
 
 func (lc *lineChart) layout(gtx C, th *material.Theme, s report.Series) D {
 	if len(s.Points) == 0 {
@@ -373,7 +451,10 @@ func (lc *lineChart) layout(gtx C, th *material.Theme, s report.Series) D {
 	xLabels(gtx, th, s, plot, slot)
 	if hovered >= 0 {
 		p := s.Points[hovered]
-		lines := []string{p.Label, s.FormatValue(p.Value)}
+		lines := []string{p.Label}
+		if !lc.hideValue {
+			lines = append(lines, s.FormatValue(p.Value))
+		}
 		if p.Detail != "" {
 			lines = append(lines, p.Detail)
 		}
