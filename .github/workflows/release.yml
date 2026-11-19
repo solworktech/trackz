@@ -11,6 +11,15 @@ name: Release
 "on":
   push:
     tags: ["v*"]
+  # To build the release of an existing tag again, with this workflow as it
+  # is on the branch it is run from (the code and the GoReleaser configs
+  # are the tag's), e.g. after fixing this file:
+  #   gh workflow run release.yml --ref <branch> -f tag=v1.2.3
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to build the release for (e.g. v1.2.3)
+        required: true
 
 permissions:
   contents: write  # to create the release and upload to it
@@ -21,6 +30,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ inputs.tag || github.ref }}
           fetch-depth: 0  # tags, for the changelog
 
       - uses: actions/setup-go@v5
@@ -56,7 +66,9 @@ jobs:
               apt-get install -y --no-install-recommends libc6-dev "$@"' \
             sh "${dev[@]}"
           sudo mkdir -p "$sysroot"
-          docker export sysroot | sudo tar -x -C "$sysroot" \
+          # --anchored: unanchored, 'sys/*' would also drop every sys/
+          # below, such as usr/include/aarch64-linux-gnu/sys.
+          docker export sysroot | sudo tar -x -C "$sysroot" --anchored \
             --exclude='dev/*' --exclude='proc/*' --exclude='sys/*'
           docker rm sysroot >/dev/null
           # Absolute symlinks would point into this machine: rebase them.
@@ -80,6 +92,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ inputs.tag || github.ref }}
           fetch-depth: 0
 
       - uses: actions/setup-go@v5
