@@ -308,7 +308,7 @@ func field(gtx C, th *material.Theme, caption string, ed *widget.Editor, hint st
 				return layout.UniformInset(6).Layout(gtx, func(gtx C) D {
 					e := material.Editor(th, ed, hint)
 					e.TextSize = 14
-					return e.Layout(gtx)
+					return editorField(gtx, e)
 				})
 			})
 		}),

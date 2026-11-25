@@ -298,7 +298,7 @@ func (u *UI) patternField(gtx C, label string, ed *widget.Editor, hint string) D
 					gtx.Constraints.Min = gtx.Constraints.Max
 					e := material.Editor(u.th, ed, hint)
 					e.TextSize = 14
-					return e.Layout(gtx)
+					return editorField(gtx, e)
 				})
 			})
 		}),

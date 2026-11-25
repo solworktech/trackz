@@ -242,7 +242,7 @@ func (u *UI) layoutStatusDialog(gtx C) {
 					layout.Rigid(layout.Spacer{Width: 6}.Layout),
 					layout.Flexed(1, func(gtx C) D {
 						return bordered(gtx, func(gtx C) D {
-							return layout.UniformInset(6).Layout(gtx, material.Editor(u.th, &d.other, "e.g. Dentist").Layout)
+							return layout.UniformInset(6).Layout(gtx, func(gtx C) D { return editorField(gtx, material.Editor(u.th, &d.other, "e.g. Dentist")) })
 						})
 					}),
 				)

@@ -190,7 +190,7 @@ func (u *UI) layoutPicker(gtx C) D {
 					return layout.UniformInset(6).Layout(gtx, func(gtx C) D {
 						e := material.Editor(u.th, &p.filter, "Filter by name…")
 						e.TextSize = 14
-						return e.Layout(gtx)
+						return editorField(gtx, e)
 					})
 				})
 			}),

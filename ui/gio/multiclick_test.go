@@ -3,6 +3,8 @@ package gio
 import (
 	"strings"
 	"testing"
+
+	"gioui.org/widget"
 )
 
 func TestWordAt(t *testing.T) {
@@ -32,18 +34,18 @@ func TestWordAt(t *testing.T) {
 }
 
 func TestExtendByWords(t *testing.T) {
-	var s sqlEditor
+	var ed widget.Editor
 	text := "SELECT SUM(focus_end_time - start) AS total"
-	s.ed.SetText(text)
-	s.refresh()
+	ed.SetText(text)
+	c := multiClick{ed: &ed, text: text, runes: []rune(text)}
 	sel := func() string {
-		a, b := s.ed.Selection()
-		return string(s.runes[min(a, b):max(a, b)])
+		a, b := ed.Selection()
+		return string(c.runes[min(a, b):max(a, b)])
 	}
 	off := strings.Index(text, "end") // inside focus_end_time
-	s.click.unit = 2
-	s.click.anchorFrom, s.click.anchorTo = s.unitAt(2, off)
-	for _, c := range []struct {
+	c.unit = 2
+	c.anchorFrom, c.anchorTo = c.unitAt(2, off)
+	for _, tc := range []struct {
 		to   int
 		want string
 	}{
@@ -52,14 +54,14 @@ func TestExtendByWords(t *testing.T) {
 		{strings.Index(text, "LECT"), "SELECT SUM(focus_end_time"},
 		{strings.Index(text, "tal"), "focus_end_time - start) AS total"},
 	} {
-		s.extendTo(c.to)
-		if got := sel(); got != c.want {
-			t.Errorf("extend to %d: selected %q, want %q", c.to, got, c.want)
+		c.extendTo(tc.to)
+		if got := sel(); got != tc.want {
+			t.Errorf("extend to %d: selected %q, want %q", tc.to, got, tc.want)
 		}
 	}
 	// The caret follows the pointer side.
-	s.extendTo(0)
-	if caret, _ := s.ed.Selection(); caret != 0 {
+	c.extendTo(0)
+	if caret, _ := ed.Selection(); caret != 0 {
 		t.Errorf("caret = %d after extending backwards, want 0", caret)
 	}
 }

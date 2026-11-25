@@ -657,7 +657,7 @@ func (u *UI) layoutRangeBar(gtx C) D {
 				gtx.Constraints.Max.X = gtx.Dp(56)
 				gtx.Constraints.Min.X = gtx.Constraints.Max.X
 				return bordered(gtx, func(gtx C) D {
-					return layout.UniformInset(7).Layout(gtx, material.Editor(u.th, &u.rowLimit, "20").Layout)
+					return layout.UniformInset(7).Layout(gtx, func(gtx C) D { return editorField(gtx, material.Editor(u.th, &u.rowLimit, "20")) })
 				})
 			}),
 			layout.Rigid(func(gtx C) D {
@@ -785,7 +785,7 @@ func (u *UI) layoutExport(gtx C) D {
 			layout.Flexed(1, func(gtx C) D {
 				return bordered(gtx, func(gtx C) D {
 					gtx.Constraints.Min.X = gtx.Constraints.Max.X
-					return layout.UniformInset(7).Layout(gtx, material.Editor(u.th, &u.exportPath, "file.csv").Layout)
+					return layout.UniformInset(7).Layout(gtx, func(gtx C) D { return editorField(gtx, material.Editor(u.th, &u.exportPath, "file.csv")) })
 				})
 			}),
 			layout.Rigid(func(gtx C) D {
@@ -1095,7 +1095,7 @@ func (u *UI) layoutTitleSettings(gtx C) D {
 					e := material.Editor(u.th, &s.titleRules, "")
 					e.Font = monoFont
 					e.TextSize = 13
-					return e.Layout(gtx)
+					return editorField(gtx, e)
 				})
 			})
 		}),
@@ -1108,7 +1108,9 @@ func (u *UI) layoutTitleSettings(gtx C) D {
 					gtx.Constraints.Max.X = gtx.Dp(320)
 					gtx.Constraints.Min.X = gtx.Constraints.Max.X
 					return bordered(gtx, func(gtx C) D {
-						return layout.UniformInset(7).Layout(gtx, material.Editor(u.th, &s.titleTest, "Try a title, e.g. (3) YouTube").Layout)
+						return layout.UniformInset(7).Layout(gtx, func(gtx C) D {
+							return editorField(gtx, material.Editor(u.th, &s.titleTest, "Try a title, e.g. (3) YouTube"))
+						})
 					})
 				}),
 				layout.Flexed(1, func(gtx C) D {
