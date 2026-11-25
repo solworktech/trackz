@@ -35,6 +35,24 @@ type Point struct {
 	App string
 	// Detail is extra tooltip text, e.g. "12 window switches".
 	Detail string
+	// First and Last are when the point's records were first and last in
+	// focus (Unix seconds: the earliest start, the latest end), 0 when not
+	// applicable; Span describes them for tooltips (Service.Span).
+	First, Last int64
+	Span        string
+	// Item is what the point stands for, for its timeline; zero for points
+	// that have none.
+	Item Item
+}
+
+// span widens p's First and Last to include rec.
+func (p *Point) span(rec store.Record) {
+	if p.First == 0 || rec.Start < p.First {
+		p.First = rec.Start
+	}
+	if rec.End > p.Last {
+		p.Last = rec.End
+	}
 }
 
 // StatusApp is the application name of status entries (and of trackz-viz

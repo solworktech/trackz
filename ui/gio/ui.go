@@ -61,6 +61,7 @@ type UI struct {
 
 	mu      sync.Mutex
 	results map[report.View]*viewData
+	drills  map[report.View]*drill // open drill-downs (timelines)
 	cfgGen  int
 	dataGen int // guarded by mu; bumped when the data changed (a status)
 
@@ -154,6 +155,7 @@ func New(svc *report.Service, opts ...app.Option) *UI {
 		presets:  make([]widget.Clickable, len(report.Presets)+1),
 		rng:      report.Preset(report.Today),
 		results:  map[report.View]*viewData{},
+		drills:   map[report.View]*drill{},
 	}
 	// System fonts as before, plus Go Mono (bundled) for the SQL editor.
 	u.th.Shaper = text.NewShaper(text.WithCollection(monoFaces()))
@@ -310,11 +312,12 @@ func (u *UI) ensure(force bool) {
 	if v == report.ViewCustomQuery || v == report.ViewSettings {
 		return
 	}
+	u.ensureTimeline(force)
 	key := u.resultKey()
 	u.mu.Lock()
 	d := u.results[v]
 	fresh := d != nil && d.key == key && (d.loading || d.err != nil ||
-		(d.res != nil && !u.live(d.res)))
+		(d.res != nil && !u.liveSince(d.res.Generated, d.res.Range)))
 	if fresh && !force {
 		u.mu.Unlock()
 		return
@@ -345,17 +348,18 @@ func (u *UI) ensure(force bool) {
 	}()
 }
 
-// live reports whether res covers the present and is due for its
-// automatic refresh (every Config.RefreshMinutes; 0 disables it).
-func (u *UI) live(res *report.Result) bool {
+// liveSince reports whether data for r, computed at generated, covers the
+// present and is due for its automatic refresh (every
+// Config.RefreshMinutes; 0 disables it).
+func (u *UI) liveSince(generated time.Time, r report.Range) bool {
 	every := time.Duration(u.svc.Config().RefreshMinutes) * time.Minute
-	if every <= 0 || time.Since(res.Generated) < every {
+	if every <= 0 || time.Since(generated) < every {
 		return false
 	}
-	if res.Range.Kind != report.Custom {
+	if r.Kind != report.Custom {
 		return true
 	}
-	return !res.Range.ToDay.Before(u.svc.Today())
+	return !r.ToDay.Before(u.svc.Today())
 }
 
 func (u *UI) current() (*report.Result, error, bool) {
@@ -401,6 +405,7 @@ func (u *UI) handleInput(gtx C) {
 	if u.statusBtn.Clicked(gtx) {
 		u.openStatusDialog()
 	}
+	u.handleDrill(gtx)
 	for {
 		ev, ok := u.rowLimit.Update(gtx)
 		if !ok {
@@ -453,6 +458,9 @@ func (u *UI) applyRowLimit() {
 func (u *UI) exportTable() *store.Table {
 	if u.view == report.ViewCustomQuery {
 		return u.custom.table
+	}
+	if s, ok := u.drillSeries(); ok {
+		return report.TableFromSeries(s)
 	}
 	res, _, _ := u.current()
 	if res == nil {
@@ -683,24 +691,28 @@ func (u *UI) heading(gtx C, title string) D {
 			l.Color = cs.muted
 			return l.Layout(gtx)
 		}),
+		layout.Flexed(1, u.filterBadge),
+	)
+}
+
+// filterBadge says what the filter leaves out, with a button to clear it;
+// nothing when no filter applies.
+func (u *UI) filterBadge(gtx C) D {
+	if !u.filter.Active() {
+		return D{Size: image.Pt(gtx.Constraints.Min.X, 0)}
+	}
+	// What the data leaves out is easy to forget: say so in the accent
+	// colour, with a way back.
+	return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 		layout.Flexed(1, func(gtx C) D {
-			if !u.filter.Active() {
-				return D{Size: image.Pt(gtx.Constraints.Min.X, 0)}
-			}
-			// What the data leaves out is easy to forget: say so in the
-			// accent colour, with a way back.
-			return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-				layout.Flexed(1, func(gtx C) D {
-					return layout.Inset{Left: 12}.Layout(gtx, func(gtx C) D {
-						return truncLabel(gtx, u.th, 14, cs.active, "Filtered: "+u.filter.Describe())
-					})
-				}),
-				layout.Rigid(func(gtx C) D {
-					return layout.Inset{Left: 8}.Layout(gtx, func(gtx C) D {
-						return segButton(gtx, u.th, &u.clearFilter, "Clear filter", false)
-					})
-				}),
-			)
+			return layout.Inset{Left: 12}.Layout(gtx, func(gtx C) D {
+				return truncLabel(gtx, u.th, 14, cs.active, "Filtered: "+u.filter.Describe())
+			})
+		}),
+		layout.Rigid(func(gtx C) D {
+			return layout.Inset{Left: 8}.Layout(gtx, func(gtx C) D {
+				return segButton(gtx, u.th, &u.clearFilter, "Clear filter", false)
+			})
 		}),
 	)
 }
@@ -712,7 +724,11 @@ func (u *UI) layoutContent(gtx C) D {
 	case report.ViewSettings:
 		return u.layoutSettings(gtx)
 	}
+	if d := u.currentDrill(); d != nil {
+		return u.layoutDrill(gtx, d)
+	}
 	res, err, _ := u.current()
+	defer u.takeClicks(res)
 	body := func(gtx C) D {
 		switch {
 		case err != nil:
@@ -727,7 +743,11 @@ func (u *UI) layoutContent(gtx C) D {
 			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 				layout.Flexed(0.55, func(gtx C) D { return u.dashPie.layout(gtx, u.th, u.icons, res.Series) }),
 				layout.Rigid(layout.Spacer{Height: 8}.Layout),
-				layout.Flexed(0.45, func(gtx C) D { return u.dashTable.layout(gtx, u.th, res.Table, u.dashboardColumns(res)) }),
+				layout.Flexed(0.45, func(gtx C) D {
+					pts := res.Series.Points // the table's rows
+					u.dashTable.rowClick = func(r int) bool { return r < len(pts) && hasTimeline(pts[r]) }
+					return u.dashTable.layout(gtx, u.th, res.Table, u.dashboardColumns(res))
+				}),
 				layout.Rigid(u.layoutExport),
 			)
 		case report.ViewTopApps:

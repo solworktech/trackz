@@ -255,6 +255,12 @@ $ trackz-viz            # or: trackz-viz -db /path/to/trackz.db
   currently in focus is counted up to now. The heading shows how many records were left out for being shorter than the minimum duration.
 - **Top Apps** (bar chart), **Time Spent** per app (pie chart), **Window Activity** over time (focus time per hour,
   or per day for longer ranges).
+- **Timelines**: in the Dashboard, Top Apps and Time Spent, hovering over an entry also shows when it was first and
+  last in focus in the range (times for a single day, dates and times for longer ranges), and clicking it (its slice,
+  bar, legend entry or table row) shows its focus time per hour (a single day), per day (up to 31 days) or per week
+  (from Monday; longer ranges) in place of the chart, until *Back*. A focus period that spans hours or days counts in
+  each for the part in it. *Hide … without focus* leaves out the empty ones. The timeline follows the range and the
+  filter, and is what *Export CSV* exports while it is shown.
 - **Filter**: *Filter…* opens a dialog to keep only windows whose title contains some text (ignoring case) and to
   exclude applications by unticking them in the list of applications used in the range. It applies to every view but
   Custom Query (and to CSV exports) until cleared. While it is on, the button reads *Filter (on)…* and the heading

@@ -248,12 +248,14 @@ func (s *Service) Dashboard(ctx context.Context, r Range, f Filter, limit int) (
 		k := key{rec.ProcessName, title(rec.WindowName)}
 		p := totals[k]
 		if p == nil {
-			p = &Point{Label: k.window, Process: rec.ProcessName, App: rec.AppName}
+			p = &Point{Label: k.window, Process: rec.ProcessName, App: rec.AppName,
+				Item: Item{Process: rec.ProcessName, Title: k.window}}
 			totals[k] = p
 			variants[k] = map[string]bool{}
 			order = append(order, k)
 		}
 		p.Value += float64(rec.Duration())
+		p.span(rec)
 		variants[k][rec.WindowName] = true
 	}
 	pts := make([]Point, 0, len(order))
@@ -266,6 +268,7 @@ func (s *Service) Dashboard(ctx context.Context, r Range, f Filter, limit int) (
 	}
 	pts, hidden := s.dropSmall(pts)
 	pts = topN(pts, limit)
+	s.setSpans(r, pts)
 	series := Series{Title: "Top activities", Unit: Seconds, Points: pts}
 
 	t := &store.Table{Columns: []string{"process_name", "window_name", "duration", "seconds"}}
@@ -302,6 +305,7 @@ func appTotals(recs []store.Record) []Point {
 	type agg struct {
 		total float64
 		procs map[string]float64
+		span  Point // First and Last
 	}
 	byApp := map[string]*agg{}
 	var order []string
@@ -315,6 +319,7 @@ func appTotals(recs []store.Record) []Point {
 		d := float64(rec.Duration())
 		a.total += d
 		a.procs[rec.ProcessName] += d
+		a.span.span(rec)
 	}
 	pts := make([]Point, 0, len(order))
 	for _, app := range order {
@@ -325,7 +330,8 @@ func appTotals(recs []store.Record) []Point {
 				best, bestT = p, t
 			}
 		}
-		pts = append(pts, Point{Label: app, App: app, Process: best, Value: a.total})
+		pts = append(pts, Point{Label: app, App: app, Process: best, Value: a.total,
+			First: a.span.First, Last: a.span.Last, Item: Item{App: app}})
 	}
 	return pts
 }
@@ -337,6 +343,7 @@ func (s *Service) topApps(ctx context.Context, r Range, f Filter, limit int) (Se
 	}
 	pts, hidden := s.dropSmall(appTotals(recs))
 	pts = topN(pts, limit)
+	s.setSpans(r, pts)
 	// The number shown: fewer than limit when fewer apps were used.
 	return Series{
 		Title:  fmt.Sprintf("Top %d apps by total focus time", len(pts)),
@@ -351,7 +358,9 @@ func (s *Service) timePerApp(ctx context.Context, r Range, f Filter) (Series, Hi
 		return Series{}, Hidden{}, err
 	}
 	pts, hidden := s.dropSmall(appTotals(recs))
-	return Series{Title: "Total time spent per app", Unit: Seconds, Points: topN(pts, 0)}, hidden, nil
+	pts = topN(pts, 0)
+	s.setSpans(r, pts)
+	return Series{Title: "Total time spent per app", Unit: Seconds, Points: pts}, hidden, nil
 }
 
 // Activity returns focus time over time: hourly buckets for ranges of up to

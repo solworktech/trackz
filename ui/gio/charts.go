@@ -21,32 +21,86 @@ import (
 	"github.com/solworktech/trackz/internal/report"
 )
 
-// hover tracks the pointer over a chart area.
+// hover tracks the pointer over a chart area, and clicks in it.
 type hover struct {
-	pos    image.Point
-	inside bool
+	pos     image.Point
+	inside  bool
+	pressed bool
+	// clicked is set by events when a click (press and release inside)
+	// ended at pos in this frame.
+	clicked bool
 }
 
-// update registers the area for pointer events and processes them.
+// update processes the pointer events and registers the area for them.
 func (h *hover) update(gtx C, size image.Point) {
+	h.events(gtx)
+	h.area(gtx, size, pointer.CursorDefault)
+}
+
+// events processes the pointer events since the last frame.
+func (h *hover) events(gtx C) {
+	h.clicked = false
 	for {
-		ev, ok := gtx.Event(pointer.Filter{Target: h, Kinds: pointer.Move | pointer.Enter | pointer.Leave})
+		ev, ok := gtx.Event(pointer.Filter{Target: h,
+			Kinds: pointer.Move | pointer.Enter | pointer.Leave | pointer.Press | pointer.Release | pointer.Cancel})
 		if !ok {
 			break
 		}
-		if e, ok := ev.(pointer.Event); ok {
-			switch e.Kind {
-			case pointer.Leave:
-				h.inside = false
-			default:
-				h.inside = true
-				h.pos = e.Position.Round()
-			}
+		e, ok := ev.(pointer.Event)
+		if !ok {
+			continue
+		}
+		switch e.Kind {
+		case pointer.Leave:
+			h.inside, h.pressed = false, false
+		case pointer.Cancel:
+			h.pressed = false
+		case pointer.Press:
+			h.inside, h.pressed = true, e.Buttons == pointer.ButtonPrimary
+			h.pos = e.Position.Round()
+		case pointer.Release:
+			h.clicked = h.pressed && h.inside
+			h.pressed = false
+			h.pos = e.Position.Round()
+		default:
+			h.inside = true
+			h.pos = e.Position.Round()
 		}
 	}
+}
+
+// area registers size for the pointer events, with cursor over it (none
+// for CursorDefault).
+func (h *hover) area(gtx C, size image.Point, cursor pointer.Cursor) {
 	area := clip.Rect(image.Rectangle{Max: size}).Push(gtx.Ops)
+	if cursor != pointer.CursorDefault {
+		cursor.Add(gtx.Ops)
+	}
 	event.Op(gtx.Ops, h)
 	area.Pop()
+}
+
+// hasTimeline reports whether clicking p opens its timeline.
+func hasTimeline(p report.Point) bool { return !p.Item.IsZero() }
+
+// tipLines are the tooltip lines for p: label, value (with share when
+// total > 0), process, detail, and when it was first and last in focus.
+func tipLines(s report.Series, p report.Point, total float64) []string {
+	v := s.FormatValue(p.Value)
+	if total > 0 {
+		v += "  (" + pct(p.Value, total) + ")"
+	}
+	lines := []string{p.Label, v}
+	if p.Process != "" && p.Process != p.Label {
+		lines = append(lines, p.Process)
+	}
+	if p.Detail != "" {
+		lines = append(lines, p.Detail)
+	}
+	if p.Span != "" {
+		lines = append(lines, p.Span)
+	}
+	return lines
 }
 
 func pct(v, total float64) string {
@@ -65,6 +119,20 @@ type pieChart struct {
 	// compact puts each value right after the longest label instead of at
 	// the right edge: for short labels (application names).
 	compact bool
+	rows    []widget.Clickable // legend entries
+	// clicked is the point whose slice or legend entry was clicked in the
+	// last layout, if it has a timeline (see takeClick).
+	clicked *report.Point
+}
+
+// takeClick returns the point clicked in the last layout, if any.
+func (pc *pieChart) takeClick() (report.Point, bool) {
+	p := pc.clicked
+	pc.clicked = nil
+	if p == nil {
+		return report.Point{}, false
+	}
+	return *p, true
 }
 
 func (pc *pieChart) layout(gtx C, th *material.Theme, ic *iconCache, s report.Series) D {
@@ -118,9 +186,10 @@ func (pc *pieChart) pie(gtx C, th *material.Theme, ic *iconCache, s report.Serie
 	if size.Y > size.X {
 		size.Y = size.X
 	}
-	pc.hover.update(gtx, size)
+	pc.hover.events(gtx)
 	r := float32(min(size.X, size.Y))/2 - float32(gtx.Dp(12))
 	if r < 10 {
+		pc.hover.area(gtx, size, pointer.CursorDefault)
 		return D{Size: size}
 	}
 	c := f32.Pt(float32(size.X)/2, float32(size.Y)/2)
@@ -143,6 +212,15 @@ func (pc *pieChart) pie(gtx C, th *material.Theme, ic *iconCache, s report.Serie
 			}
 		}
 	}
+	cursor := pointer.CursorDefault
+	if hovered >= 0 && hasTimeline(s.Points[hovered]) {
+		cursor = pointer.CursorPointer
+		if pc.hover.clicked {
+			p := s.Points[hovered]
+			pc.clicked = &p
+		}
+	}
+	pc.hover.area(gtx, size, cursor)
 
 	start := -math.Pi / 2
 	for i, p := range s.Points {
@@ -171,14 +249,7 @@ func (pc *pieChart) pie(gtx C, th *material.Theme, ic *iconCache, s report.Serie
 	}
 	if hovered >= 0 {
 		p := s.Points[hovered]
-		lines := []string{p.Label, s.FormatValue(p.Value) + "  (" + pct(p.Value, total) + ")"}
-		if p.Process != "" && p.Process != p.Label {
-			lines = append(lines, p.Process)
-		}
-		if p.Detail != "" {
-			lines = append(lines, p.Detail)
-		}
-		tooltip(gtx, th, pc.hover.pos, size, ic.get(p), lines...)
+		tooltip(gtx, th, pc.hover.pos, size, ic.get(p), tipLines(s, p, total)...)
 	}
 	return D{Size: size}
 }
@@ -267,53 +338,88 @@ func (pc *pieChart) legendList(gtx C, th *material.Theme, ic *iconCache, s repor
 		fixed := gtx.Dp(12+6) + gtx.Dp(18+6) + gtx.Dp(legendValueGap) + valueW + gtx.Dp(barGap)
 		labelW = min(labelW, max(0, gtx.Constraints.Max.X-fixed))
 	}
+	if len(pc.rows) != len(s.Points) {
+		pc.rows = make([]widget.Clickable, len(s.Points))
+	}
+	for i := range pc.rows {
+		if pc.rows[i].Clicked(gtx) && hasTimeline(s.Points[i]) {
+			p := s.Points[i]
+			pc.clicked = &p
+		}
+	}
 	return list.Layout(gtx, len(s.Points), func(gtx C, i int) D {
 		p := s.Points[i]
-		label := layout.Flexed(1, func(gtx C) D { return truncLabel(gtx, th, 13, cs.fg, p.Label) })
-		value := layout.Rigid(func(gtx C) D {
-			return layout.Inset{Left: 8}.Layout(gtx, func(gtx C) D {
-				l := material.Label(th, 13, values[i])
-				l.Color = cs.muted
-				return l.Layout(gtx)
-			})
-		})
-		if pc.compact {
-			label = layout.Rigid(func(gtx C) D {
-				gtx.Constraints.Min.X, gtx.Constraints.Max.X = labelW, labelW
-				return truncLabel(gtx, th, 13, cs.fg, p.Label)
-			})
-			value = layout.Rigid(func(gtx C) D {
-				return layout.Inset{Left: legendValueGap}.Layout(gtx, func(gtx C) D {
-					gtx.Constraints.Min.X, gtx.Constraints.Max.X = valueW, valueW
-					l := material.Label(th, 13, values[i])
-					l.Color = cs.muted
-					l.Alignment = text.End
-					return l.Layout(gtx)
-				})
-			})
+		if !hasTimeline(p) {
+			return pc.legendRow(gtx, th, ic, p, i, values[i], labelW, valueW, barGap)
 		}
-		return layout.Inset{Top: 2, Bottom: 2, Right: barGap}.Layout(gtx, func(gtx C) D {
-			return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-				layout.Rigid(func(gtx C) D {
-					sz := gtx.Dp(12)
-					fillRect(gtx, image.Rect(0, 0, sz, sz), seriesColor(i))
-					return D{Size: image.Pt(sz+gtx.Dp(6), sz)}
-				}),
-				layout.Rigid(func(gtx C) D {
-					return layout.Inset{Right: 6}.Layout(gtx, func(gtx C) D {
-						return layoutIcon(gtx, ic.get(p), 18)
-					})
-				}),
-				label,
-				value,
-			)
+		return pc.rows[i].Layout(gtx, func(gtx C) D {
+			pointer.CursorPointer.Add(gtx.Ops)
+			return pc.legendRow(gtx, th, ic, p, i, values[i], labelW, valueW, barGap)
 		})
 	})
 }
 
-// barChart draws horizontal bars: icon, label, bar, value.
+// legendRow is one legend entry: colour, icon, label, value (value text
+// valTxt; labelW and valueW are the column widths of a compact legend).
+func (pc *pieChart) legendRow(gtx C, th *material.Theme, ic *iconCache, p report.Point, i int, valTxt string, labelW, valueW int, barGap unit.Dp) D {
+	label := layout.Flexed(1, func(gtx C) D { return truncLabel(gtx, th, 13, cs.fg, p.Label) })
+	value := layout.Rigid(func(gtx C) D {
+		return layout.Inset{Left: 8}.Layout(gtx, func(gtx C) D {
+			l := material.Label(th, 13, valTxt)
+			l.Color = cs.muted
+			return l.Layout(gtx)
+		})
+	})
+	if pc.compact {
+		label = layout.Rigid(func(gtx C) D {
+			gtx.Constraints.Min.X, gtx.Constraints.Max.X = labelW, labelW
+			return truncLabel(gtx, th, 13, cs.fg, p.Label)
+		})
+		value = layout.Rigid(func(gtx C) D {
+			return layout.Inset{Left: legendValueGap}.Layout(gtx, func(gtx C) D {
+				gtx.Constraints.Min.X, gtx.Constraints.Max.X = valueW, valueW
+				l := material.Label(th, 13, valTxt)
+				l.Color = cs.muted
+				l.Alignment = text.End
+				return l.Layout(gtx)
+			})
+		})
+	}
+	return layout.Inset{Top: 2, Bottom: 2, Right: barGap}.Layout(gtx, func(gtx C) D {
+		return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+			layout.Rigid(func(gtx C) D {
+				sz := gtx.Dp(12)
+				fillRect(gtx, image.Rect(0, 0, sz, sz), seriesColor(i))
+				return D{Size: image.Pt(sz+gtx.Dp(6), sz)}
+			}),
+			layout.Rigid(func(gtx C) D {
+				return layout.Inset{Right: 6}.Layout(gtx, func(gtx C) D {
+					return layoutIcon(gtx, ic.get(p), 18)
+				})
+			}),
+			label,
+			value,
+		)
+	})
+}
+
+// barChart draws horizontal bars: icon, label, bar, value. Hovering a bar
+// shows its details; clicking one with a timeline reports it (takeClick).
 type barChart struct {
-	list layout.List
+	list    layout.List
+	hover   hover
+	rows    []widget.Clickable
+	clicked *report.Point
+}
+
+// takeClick returns the point clicked in the last layout, if any.
+func (bc *barChart) takeClick() (report.Point, bool) {
+	p := bc.clicked
+	bc.clicked = nil
+	if p == nil {
+		return report.Point{}, false
+	}
+	return *p, true
 }
 
 func (bc *barChart) layout(gtx C, th *material.Theme, ic *iconCache, s report.Series) D {
@@ -324,9 +430,20 @@ func (bc *barChart) layout(gtx C, th *material.Theme, ic *iconCache, s report.Se
 	if max <= 0 {
 		max = 1
 	}
+	size := gtx.Constraints.Max
+	bc.hover.events(gtx)
+	if len(bc.rows) != len(s.Points) {
+		bc.rows = make([]widget.Clickable, len(s.Points))
+	}
+	for i := range bc.rows {
+		if bc.rows[i].Clicked(gtx) && hasTimeline(s.Points[i]) {
+			p := s.Points[i]
+			bc.clicked = &p
+		}
+	}
 	labelW := gtx.Constraints.Max.X / 3
 	bc.list.Axis = layout.Vertical
-	return bc.list.Layout(gtx, len(s.Points), func(gtx C, i int) D {
+	row := func(gtx C, i int) D {
 		p := s.Points[i]
 		return layout.Inset{Top: 3, Bottom: 3}.Layout(gtx, func(gtx C) D {
 			return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
@@ -348,13 +465,40 @@ func (bc *barChart) layout(gtx C, th *material.Theme, ic *iconCache, s report.Se
 					if w < 1 && p.Value > 0 {
 						w = 1
 					}
-					fillRect(gtx, image.Rect(0, 0, w, h), seriesColor(i))
+					col := seriesColor(i)
+					if bc.rows[i].Hovered() {
+						col = lighten(col)
+					}
+					fillRect(gtx, image.Rect(0, 0, w, h), col)
 					labelAt(gtx, th, image.Pt(w+gtx.Dp(6), (h-measure(gtx, th, 13, valTxt).Y)/2), 13, cs.muted, valTxt)
 					return D{Size: image.Pt(gtx.Constraints.Max.X, h)}
 				}),
 			)
 		})
+	}
+	d := bc.list.Layout(gtx, len(s.Points), func(gtx C, i int) D {
+		return bc.rows[i].Layout(gtx, func(gtx C) D {
+			if hasTimeline(s.Points[i]) {
+				pointer.CursorPointer.Add(gtx.Ops)
+			}
+			return row(gtx, i)
+		})
 	})
+	// The pointer position for the tooltip, without taking the rows'
+	// events (and clicks).
+	pass := pointer.PassOp{}.Push(gtx.Ops)
+	bc.hover.area(gtx, size, pointer.CursorDefault)
+	pass.Pop()
+	if bc.hover.inside {
+		for i := range bc.rows {
+			if bc.rows[i].Hovered() {
+				p := s.Points[i]
+				tooltip(gtx, th, bc.hover.pos, size, ic.get(p), tipLines(s, p, 0)...)
+				break
+			}
+		}
+	}
+	return d
 }
 
 // columnChart draws vertical bars (time series) with hover details.
@@ -463,19 +607,35 @@ func (lc *lineChart) layout(gtx C, th *material.Theme, s report.Series) D {
 	return D{Size: size}
 }
 
-// seriesAxisMax rounds the series maximum up to a "nice" value; durations
-// are rounded in hours (or minutes) so gridlines fall on readable values.
+// seriesAxisMax rounds the series maximum up so that the gridlines fall on
+// readable values: durations in steps of whole minutes (1, 2, 5, 10, 15)
+// or hours (1, 2, 2.5, 5 x 10^n), numbers to 1, 2, 2.5, 5 x 10^n.
 func seriesAxisMax(s report.Series) float64 {
 	v := s.Max()
 	if s.Unit == report.Seconds {
 		switch {
 		case v >= 3600:
-			return axisMax(v/3600) * 3600
+			return niceStep(v/3600/gridLines, 1, 2, 2.5, 5, 10) * gridLines * 3600
 		case v >= 60:
-			return axisMax(v/60) * 60
+			return niceStep(v/60/gridLines, 1, 2, 5, 10, 15) * gridLines * 60
 		}
 	}
 	return axisMax(v)
+}
+
+// niceStep returns the first of steps (times a power of ten, for values of
+// 1 and more) that is at least v.
+func niceStep(v float64, steps ...float64) float64 {
+	exp := 1.0
+	if v > steps[len(steps)-1] {
+		exp = math.Pow(10, math.Floor(math.Log10(v)))
+	}
+	for _, m := range steps {
+		if m*exp >= v {
+			return m * exp
+		}
+	}
+	return steps[len(steps)-1] * exp
 }
 
 // axisMax rounds the maximum up to a "nice" value (1, 2, 2.5, 5 x 10^n).
@@ -545,4 +705,10 @@ func emptyChart(gtx C, th *material.Theme) D {
 		l.Color = cs.muted
 		return l.Layout(gtx)
 	})
+}
+
+// lighten mixes c a quarter of the way to white (a hovered bar).
+func lighten(c color.NRGBA) color.NRGBA {
+	mix := func(v uint8) uint8 { return v + (255-v)/4 }
+	return color.NRGBA{R: mix(c.R), G: mix(c.G), B: mix(c.B), A: c.A}
 }

@@ -45,6 +45,19 @@ type tableView struct {
 	orderFor *store.Table
 	orderCol int
 	orderDsc bool
+
+	// rowClick, when set, says which rows (indexes in the table) can be
+	// clicked; a click is reported by takeClick.
+	rowClick func(row int) bool
+	rows     []widget.Clickable // by table row
+	clicked  int                // table row clicked in the last layout, or -1
+}
+
+// takeClick returns the table row clicked in the last layout, if any.
+func (tv *tableView) takeClick() (int, bool) {
+	r := tv.clicked
+	tv.clicked = -1
+	return r, r >= 0
 }
 
 // defaultColumns shows every column of t under its own name, sized by the
@@ -151,6 +164,17 @@ func (tv *tableView) layout(gtx C, th *material.Theme, t *store.Table, cols []ta
 		}
 	}
 	order := tv.rowOrder(t, cols)
+	tv.clicked = -1
+	if tv.rowClick != nil {
+		if len(tv.rows) != len(t.Rows) {
+			tv.rows = make([]widget.Clickable, len(t.Rows))
+		}
+		for r := range tv.rows {
+			if tv.rows[r].Clicked(gtx) && tv.rowClick(r) {
+				tv.clicked = r
+			}
+		}
+	}
 
 	// The rows' list keeps room for its scrollbar only when they do not all
 	// fit (as in the last frame); the header leaves the same room, so its
@@ -245,20 +269,32 @@ func (tv *tableView) layout(gtx C, th *material.Theme, t *store.Table, cols []ta
 		layout.Flexed(1, func(gtx C) D {
 			return list.Layout(gtx, len(order), func(gtx C, i int) D {
 				r := order[i]
-				if i%2 == 1 {
-					fillRect(gtx, image.Rect(0, 0, gtx.Constraints.Max.X, rowH), cs.stripe)
+				row := func(gtx C) D {
+					switch {
+					case tv.rowClick != nil && tv.rowClick(r) && tv.rows[r].Hovered():
+						fillRect(gtx, image.Rect(0, 0, gtx.Constraints.Max.X, rowH), cs.header)
+					case i%2 == 1:
+						fillRect(gtx, image.Rect(0, 0, gtx.Constraints.Max.X, rowH), cs.stripe)
+					}
+					children := make([]layout.FlexChild, len(cols))
+					for c := range cols {
+						children[c] = layout.Flexed(cols[c].weight, func(gtx C) D {
+							var icon *paint.ImageOp
+							if cols[c].icon != nil {
+								icon = cols[c].icon(r)
+							}
+							return cell(gtx, c, t.Rows[r][cols[c].src].String(), icon)
+						})
+					}
+					return layout.Flex{}.Layout(gtx, children...)
 				}
-				children := make([]layout.FlexChild, len(cols))
-				for c := range cols {
-					children[c] = layout.Flexed(cols[c].weight, func(gtx C) D {
-						var icon *paint.ImageOp
-						if cols[c].icon != nil {
-							icon = cols[c].icon(r)
-						}
-						return cell(gtx, c, t.Rows[r][cols[c].src].String(), icon)
-					})
+				if tv.rowClick == nil || !tv.rowClick(r) {
+					return row(gtx)
 				}
-				return layout.Flex{}.Layout(gtx, children...)
+				return tv.rows[r].Layout(gtx, func(gtx C) D {
+					pointer.CursorPointer.Add(gtx.Ops)
+					return row(gtx)
+				})
 			})
 		}),
 	)
