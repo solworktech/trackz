@@ -31,7 +31,7 @@ func TestMergedTitles(t *testing.T) {
 	}
 
 	// The title filter sees the titles as shown: "(3)" is gone.
-	res, err = s.Run(ctx, ViewDashboard, Preset(Today), Filter{TitleContains: "(3)"})
+	res, err = s.Run(ctx, ViewDashboard, Preset(Today), Filter{Include: []string{"(3)"}})
 	if err != nil {
 		t.Fatal(err)
 	}

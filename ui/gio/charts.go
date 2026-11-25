@@ -505,7 +505,7 @@ func (bc *barChart) layout(gtx C, th *material.Theme, ic *iconCache, s report.Se
 type columnChart struct{ hover hover }
 
 func (cc *columnChart) layout(gtx C, th *material.Theme, s report.Series) D {
-	if len(s.Points) == 0 {
+	if len(s.Points) == 0 || s.Max() <= 0 { // nothing to draw: say so
 		return emptyChart(gtx, th)
 	}
 	size := gtx.Constraints.Max
@@ -551,7 +551,7 @@ type lineChart struct {
 }
 
 func (lc *lineChart) layout(gtx C, th *material.Theme, s report.Series) D {
-	if len(s.Points) == 0 {
+	if len(s.Points) == 0 || s.Max() <= 0 { // nothing to draw: say so
 		return emptyChart(gtx, th)
 	}
 	size := gtx.Constraints.Max

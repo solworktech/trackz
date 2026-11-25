@@ -17,7 +17,7 @@ func TestFilter(t *testing.T) {
 	add(t, st, "lxterminal", "Lxterminal", "vim invoice.go", base.Add(2*time.Hour), 600)
 	ctx := context.Background()
 
-	f := Filter{TitleContains: "INVOICE"}
+	f := Filter{Include: []string{"INVOICE"}}
 	res, err := s.Run(ctx, ViewTimeSpent, Preset(Today), f)
 	if err != nil {
 		t.Fatal(err)
@@ -33,14 +33,47 @@ func TestFilter(t *testing.T) {
 	if len(res.Series.Points) != 1 || res.Series.Points[0].Label != "Invoice 42 - Mail" {
 		t.Errorf("title + app filter: %+v", res.Series.Points)
 	}
-	if got := f.Describe(); got != `window titles containing "INVOICE" · excluding Lxterminal` {
+	if got := f.Describe(); got != `titles with "INVOICE" · excluding Lxterminal` {
 		t.Errorf("describe = %q", got)
 	}
-	if (Filter{}).Active() || (Filter{TitleContains: "  "}).Active() {
+	// Several include patterns (any matches), exclusions, regexps; whole
+	// words for plain patterns.
+	for _, c := range []struct {
+		f    Filter
+		want float64
+	}{
+		{Filter{Include: []string{"news", "/invoice\\.go/"}}, 1200},
+		{Filter{Include: []string{"invoice"}, Exclude: []string{"mail"}}, 600},
+		{Filter{Exclude: []string{"invoice"}}, 600},
+		{Filter{Include: []string{"invoic"}}, 0}, // not a whole word
+		{Filter{Include: []string{"/invoic/"}}, 1200},
+	} {
+		res, err := s.Run(ctx, ViewTimeSpent, Preset(Today), c.f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := res.Series.Total(); got != c.want {
+			t.Errorf("%+v: %v seconds, want %v", c.f, got, c.want)
+		}
+	}
+	bad := Filter{Include: []string{"/a(/"}}
+	if bad.Validate() == nil {
+		t.Error("invalid regexp must not validate")
+	}
+	if _, err := s.Run(ctx, ViewTimeSpent, Preset(Today), bad); err == nil {
+		t.Error("a report with an invalid pattern must fail")
+	}
+	if got := (Filter{Include: []string{"a", "/b/"}, Exclude: []string{"c"}}).Describe(); got != `titles with "a" or "/b/" · titles without "c"` {
+		t.Errorf("describe = %q", got)
+	}
+	if (Filter{}).Active() || (Filter{Include: []string{"  "}, Exclude: []string{""}}).Active() {
 		t.Error("blank filter must be inactive")
 	}
 	if a, b := (Filter{ExcludeApps: []string{"b", "a"}}).Key(), (Filter{ExcludeApps: []string{"a", "b"}}).Key(); a != b {
 		t.Error("key must not depend on order")
+	}
+	if a, b := (Filter{Include: []string{"x"}}).Key(), (Filter{Exclude: []string{"x"}}).Key(); a == b {
+		t.Error("include and exclude must not share a key")
 	}
 	// The app list ignores the filter, so excluded apps can be re-included.
 	apps, err := s.Apps(ctx, Preset(Today))

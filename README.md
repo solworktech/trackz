@@ -261,10 +261,14 @@ $ trackz-viz            # or: trackz-viz -db /path/to/trackz.db
   (from Monday; longer ranges) in place of the chart, until *Back*. A focus period that spans hours or days counts in
   each for the part in it. *Hide … without focus* leaves out the empty ones. The timeline follows the range and the
   filter, and is what *Export CSV* exports while it is shown.
-- **Filter**: *Filter…* opens a dialog to keep only windows whose title contains some text (ignoring case) and to
-  exclude applications by unticking them in the list of applications used in the range. It applies to every view but
-  Custom Query (and to CSV exports) until cleared. While it is on, the button reads *Filter (on)…* and the heading
-  says what is filtered, e.g. `Filtered: window titles containing "invoice" · excluding Firefox`, with a *Clear filter*
+- **Filter**: *Filter…* opens a dialog to keep only windows whose title matches any of some patterns, to leave out
+  those matching any of others, and to exclude applications by unticking them in the list of applications used in the
+  range. Patterns go one per line; a plain one is matched on whole words, ignoring case (`trackz` matches `trackz-viz`
+  but not `trackzilla`; `Jim Smith` matches `Re: Jim Smith's PR`), and `/.../` is a regular expression (Go syntax,
+  ignoring case), e.g. `/inv-\d+/`. In the pattern fields Enter starts a new line; Ctrl+Enter (Cmd+Enter on macOS)
+  applies. The filter applies to every view but Custom Query (and to CSV exports) until cleared. While it is on, the
+  button reads *Filter (on)…* and the heading says what is filtered, e.g.
+  `Filtered: titles with "invoice" or "/inv-\d+/" · titles without "draft" · excluding Firefox`, with a *Clear filter*
   button.
 - **Set Status**: records time away from the computer's normal use. Pick *Out to lunch*, *Meeting*, *Coffee break*,
   *Phone call*, *Away from desk*, *Errand* or type another status, then *Start Now*: a record with `trackz-viz` as the

@@ -3,7 +3,9 @@ package gio
 import (
 	"context"
 	"image"
+	"runtime"
 	"slices"
+	"strings"
 	"time"
 
 	"gioui.org/f32"
@@ -15,6 +17,7 @@ import (
 	"gioui.org/widget"
 	"gioui.org/widget/material"
 
+	"github.com/solworktech/trackz/internal/patterns"
 	"github.com/solworktech/trackz/internal/report"
 	"github.com/solworktech/trackz/internal/timefmt"
 )
@@ -22,17 +25,18 @@ import (
 // filterDialog edits the filter applied to the predefined views.
 type filterDialog struct {
 	open                 bool
-	title                widget.Editor
-	apps                 []filterApp // guarded by UI.mu while loading
-	loading              bool        // guarded by UI.mu
-	loadErr              error       // guarded by UI.mu
+	include, exclude     widget.Editor // title patterns, one per line
+	err                  error         // an invalid pattern, from Apply
+	apps                 []filterApp   // guarded by UI.mu while loading
+	loading              bool          // guarded by UI.mu
+	loadErr              error         // guarded by UI.mu
 	list                 widget.List
 	all, none            widget.Clickable
 	apply, cancel, clear widget.Clickable
 	scrim, panel         int
 	excludedWhenOpened   []string
 	appsFor              report.Range
-	focus                bool // focus the title editor on the next frame
+	focus                bool // focus the include editor on the next frame
 }
 
 type filterApp struct {
@@ -42,9 +46,14 @@ type filterApp struct {
 
 func (u *UI) openFilterDialog() {
 	d := &u.filterDlg
-	d.title.SingleLine, d.title.Submit = true, true
-	d.title.SetText(u.filter.TitleContains)
-	d.title.SetCaret(d.title.Len(), d.title.Len())
+	for _, e := range []struct {
+		ed *widget.Editor
+		ps []string
+	}{{&d.include, u.filter.Include}, {&d.exclude, u.filter.Exclude}} {
+		e.ed.SetText(strings.Join(e.ps, "\n"))
+		e.ed.SetCaret(e.ed.Len(), e.ed.Len())
+	}
+	d.err = nil
 	excluded := slices.Clone(u.filter.ExcludeApps)
 	d.excludedWhenOpened = excluded
 	d.open, d.focus = true, true
@@ -91,7 +100,13 @@ func (u *UI) applyFilter(f report.Filter) {
 
 func (u *UI) applyFilterDialog() {
 	d := &u.filterDlg
-	f := report.Filter{TitleContains: d.title.Text()}
+	f := report.Filter{
+		Include: patterns.Lines(d.include.Text()),
+		Exclude: patterns.Lines(d.exclude.Text()),
+	}
+	if d.err = f.Validate(); d.err != nil {
+		return // shown in the dialog
+	}
 	u.mu.Lock()
 	if d.loading || d.loadErr != nil {
 		// The list is not there to edit: keep the exclusions as they were.
@@ -131,17 +146,23 @@ func (u *UI) layoutFilterDialog(gtx C) {
 	if d.none.Clicked(gtx) {
 		setAll(false)
 	}
-	for {
-		ev, ok := d.title.Update(gtx)
-		if !ok {
-			break
-		}
-		if _, ok := ev.(widget.SubmitEvent); ok {
-			u.applyFilterDialog()
+	for _, ed := range []*widget.Editor{&d.include, &d.exclude} {
+		for {
+			ev, ok := ed.Update(gtx)
+			if !ok {
+				break
+			}
+			if _, ok := ev.(widget.ChangeEvent); ok {
+				d.err = nil
+			}
 		}
 	}
+	// Enter starts a new line in the pattern fields: Ctrl+Enter (Cmd on
+	// macOS) applies, as does Enter elsewhere.
 	for {
-		ev, ok := gtx.Event(key.Filter{Name: key.NameEscape}, key.Filter{Name: key.NameReturn}, key.Filter{Name: key.NameEnter})
+		ev, ok := gtx.Event(key.Filter{Name: key.NameEscape},
+			key.Filter{Name: key.NameReturn, Optional: key.ModShortcut},
+			key.Filter{Name: key.NameEnter, Optional: key.ModShortcut})
 		if !ok {
 			break
 		}
@@ -157,7 +178,7 @@ func (u *UI) layoutFilterDialog(gtx C) {
 		return
 	}
 	if d.focus {
-		gtx.Execute(key.FocusCmd{Tag: &d.title})
+		gtx.Execute(key.FocusCmd{Tag: &d.include})
 		d.focus = false
 	}
 	drawDialog(gtx, &d.scrim, &d.panel, 560, u.filterDialogBody)
@@ -182,12 +203,25 @@ func (u *UI) filterDialogBody(gtx C) D {
 			l.Color = cs.muted
 			return layout.Inset{Top: 2, Bottom: 12}.Layout(gtx, l.Layout)
 		}),
-		caption("Window title contains (ignoring case; empty for any title)"),
+		caption("Window titles, one pattern per line: whole words (ignoring case), or /a regular expression/."),
 		layout.Rigid(func(gtx C) D {
-			gtx.Constraints.Min.X = gtx.Constraints.Max.X
-			return bordered(gtx, func(gtx C) D {
-				return layout.UniformInset(8).Layout(gtx, material.Editor(u.th, &d.title, "e.g. invoice").Layout)
-			})
+			return layout.Flex{}.Layout(gtx,
+				layout.Flexed(1, func(gtx C) D {
+					return u.patternField(gtx, "With any of (empty: all titles)", &d.include, "e.g. trackz\ninvoice")
+				}),
+				layout.Rigid(layout.Spacer{Width: 10}.Layout),
+				layout.Flexed(1, func(gtx C) D {
+					return u.patternField(gtx, "Without any of", &d.exclude, "e.g. /draft|newsletter/")
+				}),
+			)
+		}),
+		layout.Rigid(func(gtx C) D {
+			if d.err == nil {
+				return D{}
+			}
+			l := material.Body2(u.th, d.err.Error())
+			l.Color = cs.err
+			return layout.Inset{Top: 6}.Layout(gtx, l.Layout)
 		}),
 		layout.Rigid(layout.Spacer{Height: 14}.Layout),
 		layout.Rigid(func(gtx C) D {
@@ -231,7 +265,7 @@ func (u *UI) filterDialogBody(gtx C) D {
 			return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 				layout.Rigid(func(gtx C) D { return segButton(gtx, u.th, &d.clear, "Clear filter", false) }),
 				layout.Flexed(1, func(gtx C) D {
-					l := material.Caption(u.th, "Enter applies · Esc cancels")
+					l := material.Caption(u.th, shortcutName+"+Enter applies · Esc cancels")
 					l.Color = cs.muted
 					return layout.Inset{Left: 12}.Layout(gtx, l.Layout)
 				}),
@@ -239,6 +273,34 @@ func (u *UI) filterDialogBody(gtx C) D {
 				layout.Rigid(layout.Spacer{Width: 8}.Layout),
 				layout.Rigid(func(gtx C) D { return smallButton(gtx, u.th, &d.apply, "Apply") }),
 			)
+		}),
+	)
+}
+
+// shortcutName is the key of key.ModShortcut.
+var shortcutName = map[bool]string{false: "Ctrl", true: "Cmd"}[runtime.GOOS == "darwin"]
+
+// patternField is a labelled editor for a list of patterns, a few lines
+// high (it scrolls beyond).
+func (u *UI) patternField(gtx C, label string, ed *widget.Editor, hint string) D {
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		layout.Rigid(func(gtx C) D {
+			l := material.Body2(u.th, label)
+			l.Color = cs.muted
+			return layout.Inset{Bottom: 4}.Layout(gtx, l.Layout)
+		}),
+		layout.Rigid(func(gtx C) D {
+			gtx.Constraints.Min.X = gtx.Constraints.Max.X
+			h := gtx.Dp(88)
+			gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = h, h
+			return bordered(gtx, func(gtx C) D {
+				return layout.UniformInset(8).Layout(gtx, func(gtx C) D {
+					gtx.Constraints.Min = gtx.Constraints.Max
+					e := material.Editor(u.th, ed, hint)
+					e.TextSize = 14
+					return e.Layout(gtx)
+				})
+			})
 		}),
 	)
 }
