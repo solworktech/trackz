@@ -263,8 +263,14 @@ $ trackz-viz            # or: trackz-viz -db /path/to/trackz.db
   time per group as a pie, with *Ungrouped* (windows in no group) last; screen lock, and statuses in no group (breaks),
   count in neither. Clicking a group (or *Ungrouped*) shows its windows (process and title, the top *Rows* by time,
   as on the Dashboard) as bars, a pie or a table, or its timeline, as chosen at the top right (bars at first; the
-  choice is kept for the next group); clicking a window shows that window's timeline, and *Back* goes up one level. Groups are stored as `task_groups` in
-  `config.json`:
+  choice is kept for the next group); clicking a window shows that window's timeline, and *Back* goes up one level.
+  *Edit groups…* opens the editor in place of the chart: the groups in order (add, delete, move up or down), and for
+  the selected one its name, its title patterns and exclusions, its processes (typed, or ticked in the list of
+  processes with time in the range, which a search box narrows down: text it contains, or a `/regular expression/`), and the windows assigned to it by hand (each can be removed; those with no time
+  in the range are marked, as changing the title rules can leave an assignment matching nothing). Below, a preview
+  shows the windows the group takes in the range and those its patterns or processes match but that are not in it,
+  with why (excluded, or in an earlier group). Nothing is saved until *Save*; *Cancel* discards the changes. Groups
+  are stored as `task_groups` in `config.json`, which can also be edited by hand:
   ```json
   "task_groups": [
     {"name": "trackz", "include": ["trackz"]},

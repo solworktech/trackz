@@ -302,6 +302,24 @@ func (s *Service) Dashboard(ctx context.Context, r Range, f Filter, limit int) (
 // dashboard adds up recs (in r) per (process, window), keeping the top
 // `limit` (all when limit <= 0).
 func (s *Service) dashboard(r Range, recs []store.Record, limit int) *Dashboard {
+	pts, hidden := s.dropSmall(s.windowTotals(recs))
+	pts = topN(pts, limit)
+	s.setSpans(r, pts)
+	series := Series{Title: "Top activities", Unit: Seconds, Points: pts}
+
+	t := &store.Table{Columns: []string{"process_name", "window_name", "duration", "seconds"}}
+	for _, p := range pts {
+		t.Rows = append(t.Rows, []store.Value{
+			text(p.Process), text(p.Label),
+			text(timefmt.Duration(int64(p.Value))), integer(int64(p.Value)),
+		})
+	}
+	return &Dashboard{Series: series, Table: t, Hidden: hidden}
+}
+
+// windowTotals adds up recs per (process, title as shown), in the order
+// the windows first appear.
+func (s *Service) windowTotals(recs []store.Record) []Point {
 	title := s.titleFunc()
 	type key struct{ proc, window string }
 	totals := map[key]*Point{}
@@ -329,19 +347,7 @@ func (s *Service) dashboard(r Range, recs []store.Record, limit int) *Dashboard 
 		}
 		pts = append(pts, p)
 	}
-	pts, hidden := s.dropSmall(pts)
-	pts = topN(pts, limit)
-	s.setSpans(r, pts)
-	series := Series{Title: "Top activities", Unit: Seconds, Points: pts}
-
-	t := &store.Table{Columns: []string{"process_name", "window_name", "duration", "seconds"}}
-	for _, p := range pts {
-		t.Rows = append(t.Rows, []store.Value{
-			text(p.Process), text(p.Label),
-			text(timefmt.Duration(int64(p.Value))), integer(int64(p.Value)),
-		})
-	}
-	return &Dashboard{Series: series, Table: t, Hidden: hidden}
+	return pts
 }
 
 // dropSmall removes entries whose total is below the configured minimum

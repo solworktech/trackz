@@ -332,3 +332,43 @@ func logoOp() *paint.ImageOp {
 	op := paint.NewImageOp(img)
 	return &op
 }
+
+// throbber draws a spinning loading indicator size dp across.
+func throbber(gtx C, th *material.Theme, size unit.Dp) D {
+	gtx.Constraints.Min = image.Pt(gtx.Dp(size), gtx.Dp(size))
+	gtx.Constraints.Max = gtx.Constraints.Min
+	return material.Loader(th).Layout(gtx)
+}
+
+// centredThrobber fills the space available with a throbber in its middle,
+// for content still loading.
+func centredThrobber(gtx C, th *material.Theme) D {
+	return layout.Center.Layout(gtx, func(gtx C) D { return throbber(gtx, th, 72) })
+}
+
+// inlineThrobber is a small throbber to put after a label, for data being
+// reloaded while the old is still shown.
+func inlineThrobber(gtx C, th *material.Theme) D {
+	return layout.Inset{Left: 8}.Layout(gtx, func(gtx C) D { return throbber(gtx, th, 14) })
+}
+
+// labelThenThrobber is a muted one-line label, followed by an inline
+// throbber while loading.
+func labelThenThrobber(gtx C, th *material.Theme, txt string, loading bool) D {
+	room := 0
+	if loading {
+		room = gtx.Dp(22)
+	}
+	return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+		layout.Rigid(func(gtx C) D {
+			gtx.Constraints.Max.X = max(0, gtx.Constraints.Max.X-room)
+			return truncLabel(gtx, th, 13, cs.muted, txt)
+		}),
+		layout.Rigid(func(gtx C) D {
+			if !loading {
+				return D{}
+			}
+			return inlineThrobber(gtx, th)
+		}),
+	)
+}

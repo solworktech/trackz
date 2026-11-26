@@ -207,9 +207,7 @@ func (u *UI) layoutDrill(gtx C, d *drill) D {
 		info = "Focus time per " + seg.String()
 	}
 	info += " · " + u.svc.RangeLabel(u.rng)
-	if loading {
-		info += " · loading…"
-	} else if !generated.IsZero() {
+	if !loading && !generated.IsZero() {
 		info += " · updated " + timefmt.Format(generated.In(u.svc.Location()), u.svc.Config().TimeFormat)
 	}
 	if !timeline && w != nil && w.Hidden.Count > 0 {
@@ -229,7 +227,7 @@ func (u *UI) layoutDrill(gtx C, d *drill) D {
 			layout.Flexed(1, func(gtx C) D {
 				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 					layout.Rigid(func(gtx C) D { return truncLabel(gtx, u.th, 18, cs.fg, title) }),
-					layout.Rigid(func(gtx C) D { return truncLabel(gtx, u.th, 13, cs.muted, info) }),
+					layout.Rigid(func(gtx C) D { return labelThenThrobber(gtx, u.th, info, loading) }),
 				)
 			}),
 		}
@@ -255,7 +253,7 @@ func (u *UI) layoutDrill(gtx C, d *drill) D {
 			l.Color = cs.err
 			return l.Layout(gtx)
 		case loading && generated.IsZero():
-			return D{Size: gtx.Constraints.Max}
+			return centredThrobber(gtx, u.th)
 		case timeline:
 			return d.chart.layout(gtx, u.th, s)
 		case w == nil || len(w.Series.Points) == 0:

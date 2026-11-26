@@ -65,3 +65,29 @@ func TestParseLines(t *testing.T) {
 		t.Errorf("invalid regexp: %v", err)
 	}
 }
+
+func TestSearch(t *testing.T) {
+	for _, c := range []struct {
+		q, text string
+		want    bool
+	}{
+		{"", "anything", true},
+		{"fire", "firefox-esr", true}, // a substring, not a word
+		{"FOX", "firefox-esr", true},
+		{"/^fire.*esr$/", "firefox-esr", true},
+		{"/^esr/", "firefox-esr", false},
+		{"/python3\\.\\d+/i", "python3.12", true},
+		{"/usr", "/usr/bin/vim", true}, // not a regular expression
+	} {
+		m, err := Search(c.q)
+		if err != nil {
+			t.Fatalf("%q: %v", c.q, err)
+		}
+		if got := m(c.text); got != c.want {
+			t.Errorf("search %q in %q: %v, want %v", c.q, c.text, got, c.want)
+		}
+	}
+	if _, err := Search("/a(/"); err == nil {
+		t.Error("invalid regexp must fail")
+	}
+}

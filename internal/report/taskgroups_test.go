@@ -164,3 +164,45 @@ func TestReloadAndModifyKeepHandEdits(t *testing.T) {
 		t.Errorf("saved %d rows, %d groups", saved.RowLimit, len(saved.TaskGroups))
 	}
 }
+
+func TestPreviewGroup(t *testing.T) {
+	s, st := newService(t, "UTC")
+	base := testNow.Add(-5 * time.Hour)
+	add(t, st, "firefox", "Firefox", "GenOrg portal", base, 600)
+	add(t, st, "mail", "Mail", "GenOrg newsletter", base.Add(15*time.Minute), 300)
+	add(t, st, "vim", "Vim", "GenOrg: trackz integration", base.Add(30*time.Minute), 200)
+	add(t, st, "genorgvpn", "VPN", "Connected", base.Add(time.Hour), 100)
+	add(t, st, "xterm", "XTerm", "zsh", base.Add(2*time.Hour), 50)
+	draft := []groups.Group{
+		{Name: "trackz", Include: []string{"trackz"}},
+		{Name: "GenOrg", Include: []string{"GenOrg"}, Exclude: []string{"newsletter"}, Processes: []string{"GenOrgVPN"}},
+	}
+	ctx := context.Background()
+	prev, err := s.PreviewGroup(ctx, draft, "GenOrg", Preset(Today), Filter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var in, missed []string
+	for _, p := range prev.Windows {
+		in = append(in, p.Label)
+	}
+	for _, p := range prev.Missed {
+		missed = append(missed, p.Label+" ("+p.Detail+")")
+	}
+	if strings.Join(in, "|") != "GenOrg portal|Connected" {
+		t.Errorf("windows %v", in)
+	}
+	if strings.Join(missed, "|") != "GenOrg newsletter (excluded)|GenOrg: trackz integration (in trackz)" {
+		t.Errorf("missed %v", missed)
+	}
+	if _, err := s.PreviewGroup(ctx, []groups.Group{{Name: ""}}, "x", Preset(Today), Filter{}); err == nil {
+		t.Error("an invalid draft must fail")
+	}
+	procs, err := s.Processes(ctx, Preset(Today))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(procs) != 5 || procs[0].Label != "firefox" {
+		t.Errorf("processes %+v", procs)
+	}
+}

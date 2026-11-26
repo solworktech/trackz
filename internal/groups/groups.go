@@ -111,3 +111,19 @@ func (m *Matcher) Group(process, title string) string {
 	}
 	return ""
 }
+
+// Candidate reports whether the group named name would take a window of
+// process with title on its own: one of its include patterns matches the
+// title or its processes contain the process, ignoring its exclusions,
+// assignments by hand and the groups before it (for showing near misses).
+func (m *Matcher) Candidate(name, process, title string) bool {
+	if m == nil {
+		return false
+	}
+	for _, g := range m.groups {
+		if g.name == name {
+			return g.include.Match(title) || g.processes[strings.ToLower(process)]
+		}
+	}
+	return false
+}

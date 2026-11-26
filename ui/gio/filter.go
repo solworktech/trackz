@@ -247,7 +247,7 @@ func (u *UI) filterDialogBody(gtx C) D {
 					l.Color = cs.err
 					return layout.UniformInset(8).Layout(gtx, l.Layout)
 				case loading:
-					return layout.UniformInset(8).Layout(gtx, material.Body2(u.th, "Loading…").Layout)
+					return layout.UniformInset(8).Layout(gtx, func(gtx C) D { return throbber(gtx, u.th, 24) })
 				case n == 0:
 					return layout.UniformInset(8).Layout(gtx, material.Body2(u.th, "No applications in this range.").Layout)
 				}
@@ -283,6 +283,11 @@ var shortcutName = map[bool]string{false: "Ctrl", true: "Cmd"}[runtime.GOOS == "
 // patternField is a labelled editor for a list of patterns, a few lines
 // high (it scrolls beyond).
 func (u *UI) patternField(gtx C, label string, ed *widget.Editor, hint string) D {
+	return u.patternFieldH(gtx, label, ed, hint, 88)
+}
+
+// patternFieldH is patternField with the editor h high.
+func (u *UI) patternFieldH(gtx C, label string, ed *widget.Editor, hint string, h unit.Dp) D {
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx C) D {
 			l := material.Body2(u.th, label)
@@ -291,8 +296,7 @@ func (u *UI) patternField(gtx C, label string, ed *widget.Editor, hint string) D
 		}),
 		layout.Rigid(func(gtx C) D {
 			gtx.Constraints.Min.X = gtx.Constraints.Max.X
-			h := gtx.Dp(88)
-			gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = h, h
+			gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = gtx.Dp(h), gtx.Dp(h)
 			return bordered(gtx, func(gtx C) D {
 				return layout.UniformInset(8).Layout(gtx, func(gtx C) D {
 					gtx.Constraints.Min = gtx.Constraints.Max

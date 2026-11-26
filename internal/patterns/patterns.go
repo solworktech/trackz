@@ -145,3 +145,20 @@ func (s Set) Match(text string) bool {
 	}
 	return false
 }
+
+// Search returns a matcher for a search box: q written as a regular
+// expression (/.../ with optional flags, ignoring case) matches as one;
+// otherwise q matches text that contains it, ignoring case. A blank q
+// matches everything.
+func Search(q string) (func(string) bool, error) {
+	q = strings.TrimSpace(q)
+	if expr, _, ok := splitRegexp(q); ok && expr != "" {
+		re, err := compile(q)
+		if err != nil {
+			return nil, err
+		}
+		return re.MatchString, nil
+	}
+	q = strings.ToLower(q)
+	return func(s string) bool { return strings.Contains(strings.ToLower(s), q) }, nil
+}

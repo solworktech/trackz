@@ -3,6 +3,7 @@ package report
 import (
 	"context"
 
+	"github.com/solworktech/trackz/internal/groups"
 	"github.com/solworktech/trackz/internal/store"
 )
 
@@ -91,4 +92,99 @@ func (s *Service) GroupWindows(ctx context.Context, it Item, r Range, f Filter) 
 		d.Series.Title = "Windows in no task group"
 	}
 	return d, nil
+}
+
+// GroupPreview is what a task group being edited takes in a range.
+type GroupPreview struct {
+	// Windows are the windows (process and title) the group takes, most
+	// time first.
+	Windows []Point
+	// Missed are windows one of its include patterns or processes matches
+	// but that are not in it; Detail says why ("excluded", "in <group>").
+	Missed []Point
+}
+
+// previewLimit is the most windows a GroupPreview lists of each kind.
+const previewLimit = 50
+
+// PreviewGroup returns what the group named name takes in r (records that
+// pass f) with the task groups draft, which need not be saved: for editing
+// groups.
+func (s *Service) PreviewGroup(ctx context.Context, draft []groups.Group, name string, r Range, f Filter) (GroupPreview, error) {
+	m, err := groups.New(draft)
+	if err != nil {
+		return GroupPreview{}, err
+	}
+	recs, err := s.records(ctx, r, f)
+	if err != nil {
+		return GroupPreview{}, err
+	}
+	title := s.titleFunc()
+	type key struct{ proc, title string }
+	var in []store.Record
+	missed := map[key]*Point{}
+	var order []key
+	for _, rec := range recs {
+		if rec.AppName == store.SleepAppName {
+			continue
+		}
+		t := title(rec.WindowName)
+		g := m.Group(rec.ProcessName, t)
+		switch {
+		case g == name:
+			in = append(in, rec)
+			continue
+		case !m.Candidate(name, rec.ProcessName, t):
+			continue
+		}
+		k := key{rec.ProcessName, t}
+		p := missed[k]
+		if p == nil {
+			p = &Point{Label: t, Process: rec.ProcessName, App: rec.AppName, Detail: "excluded"}
+			if g != "" {
+				p.Detail = "in " + g
+			}
+			missed[k] = p
+			order = append(order, k)
+		}
+		p.Value += float64(rec.Duration())
+	}
+	var prev GroupPreview
+	// All of them, short ones too: this is for seeing what the group takes.
+	prev.Windows = topN(s.windowTotals(in), previewLimit)
+	s.setSpans(r, prev.Windows)
+	for _, k := range order {
+		prev.Missed = append(prev.Missed, *missed[k])
+	}
+	prev.Missed = topN(prev.Missed, previewLimit)
+	return prev, nil
+}
+
+// Processes returns the processes with focus time in r (ignoring any
+// filter), most used first: Label and Process are the process_name, App
+// its application, Value the seconds.
+func (s *Service) Processes(ctx context.Context, r Range) ([]Point, error) {
+	recs, err := s.records(ctx, r, Filter{})
+	if err != nil {
+		return nil, err
+	}
+	byProc := map[string]*Point{}
+	var order []string
+	for _, rec := range recs {
+		if rec.AppName == store.SleepAppName || rec.ProcessName == store.StatusProcessName {
+			continue
+		}
+		p := byProc[rec.ProcessName]
+		if p == nil {
+			p = &Point{Label: rec.ProcessName, Process: rec.ProcessName, App: rec.AppName}
+			byProc[rec.ProcessName] = p
+			order = append(order, rec.ProcessName)
+		}
+		p.Value += float64(rec.Duration())
+	}
+	pts := make([]Point, 0, len(order))
+	for _, k := range order {
+		pts = append(pts, *byProc[k])
+	}
+	return topN(pts, 0), nil
 }

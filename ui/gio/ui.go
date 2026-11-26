@@ -90,6 +90,7 @@ type UI struct {
 	runQuery                     widget.Clickable
 	chartKind                    widget.Enum
 	groupView                    widget.Enum // view of a task group's drill-down (groupViews)
+	groupEdit                    groupEditor
 	custom                       customData
 	settings                     settingsForm
 	statusMu                     sync.Mutex // guards the status bar message
@@ -411,6 +412,7 @@ func (u *UI) handleInput(gtx C) {
 		u.openStatusDialog()
 	}
 	u.handleDrill(gtx)
+	u.handleGroupEditor(gtx)
 	for {
 		ev, ok := u.rowLimit.Update(gtx)
 		if !ok {
@@ -695,13 +697,11 @@ func (u *UI) layoutRangeBar(gtx C) D {
 
 func (u *UI) heading(gtx C, title string) D {
 	res, _, loading := u.current()
-	return layout.Flex{Alignment: layout.Baseline}.Layout(gtx,
+	return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 		layout.Rigid(material.H6(u.th, title).Layout),
 		layout.Rigid(func(gtx C) D {
 			txt := u.svc.RangeLabel(u.rng)
-			if loading {
-				txt += " · loading…"
-			} else if res != nil {
+			if res != nil && !loading {
 				txt += " · updated " + timefmt.Format(res.Generated.In(u.svc.Location()), u.svc.Config().TimeFormat)
 			}
 			if res != nil && res.Hidden.Count > 0 {
@@ -715,6 +715,12 @@ func (u *UI) heading(gtx C, title string) D {
 			l := material.Body2(u.th, "   "+txt)
 			l.Color = cs.muted
 			return l.Layout(gtx)
+		}),
+		layout.Rigid(func(gtx C) D {
+			if !loading {
+				return D{}
+			}
+			return inlineThrobber(gtx, u.th)
 		}),
 		layout.Flexed(1, u.filterBadge),
 	)
@@ -749,10 +755,13 @@ func (u *UI) layoutContent(gtx C) D {
 	case report.ViewSettings:
 		return u.layoutSettings(gtx)
 	}
+	if u.view == report.ViewTaskGroups && u.groupEdit.open {
+		return u.layoutGroupEditor(gtx)
+	}
 	if d := u.currentDrill(); d != nil {
 		return u.layoutDrill(gtx, d)
 	}
-	res, err, _ := u.current()
+	res, err, loading := u.current()
 	defer u.takeClicks(res)
 	body := func(gtx C) D {
 		switch {
@@ -760,6 +769,8 @@ func (u *UI) layoutContent(gtx C) D {
 			l := material.Body1(u.th, "Error: "+err.Error())
 			l.Color = cs.err
 			return l.Layout(gtx)
+		case res == nil && loading:
+			return centredThrobber(gtx, u.th)
 		case res == nil:
 			return D{Size: gtx.Constraints.Max}
 		}
@@ -862,6 +873,12 @@ func (u *UI) layoutCustom(gtx C) D {
 							label = "Running…"
 						}
 						return smallButton(gtx, u.th, &u.runQuery, label)
+					}),
+					layout.Rigid(func(gtx C) D {
+						if !cd.running {
+							return D{}
+						}
+						return inlineThrobber(gtx, u.th)
 					}),
 					layout.Rigid(layout.Spacer{Width: 8}.Layout),
 					layout.Rigid(func(gtx C) D { return segButton(gtx, u.th, &u.saveQuery, "Save query", false) }),

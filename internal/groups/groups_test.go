@@ -36,6 +36,10 @@ func TestGroup(t *testing.T) {
 			t.Errorf("%s %q: %q, want %q", c.process, c.title, got, c.want)
 		}
 	}
+	if !m.Candidate("GenOrg", "thunderbird", "GenOrg newsletter") || !m.Candidate("GenOrg", "GENORGVPN", "x") ||
+		m.Candidate("GenOrg", "xterm", "bash") || m.Candidate("Nope", "x", "trackz") {
+		t.Error("Candidate: include patterns and processes, ignoring exclusions and assignments")
+	}
 	var none *Matcher
 	if none.Group("x", "trackz") != "" {
 		t.Error("a nil matcher has no groups")
