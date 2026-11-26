@@ -1,10 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  macOS LaunchAgent. Install with:
+  macOS LaunchAgent: starts the recorder at login. Trackz.app (the disk
+  image) carries it in Contents/Resources. Install with:
     cp org.solworktech.trackz.plist ~/Library/LaunchAgents/
     launchctl load -w ~/Library/LaunchAgents/org.solworktech.trackz.plist
-  Then allow /usr/local/bin/trackz under System Settings > Privacy & Security
-  > Accessibility (needed for window titles) and reload the agent.
+  Then allow /Applications/Trackz.app/Contents/MacOS/trackz under System
+  Settings > Privacy & Security > Accessibility (needed for window titles)
+  and restart it: launchctl kickstart -k gui/$(id -u)/org.solworktech.trackz
+  With trackz installed from an archive instead, change the path below
+  (e.g. to /usr/local/bin/trackz).
 -->
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -13,7 +17,7 @@
   <string>org.solworktech.trackz</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/usr/local/bin/trackz</string>
+    <string>/Applications/Trackz.app/Contents/MacOS/trackz</string>
     <string>run</string>
   </array>
   <key>RunAtLoad</key>

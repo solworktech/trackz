@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Info.plist of Trackz.app; make-dmg.sh fills in @VERSION@. -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key>
+  <string>Trackz</string>
+  <key>CFBundleDisplayName</key>
+  <string>Trackz</string>
+  <key>CFBundleIdentifier</key>
+  <string>org.solworktech.Trackz</string>
+  <key>CFBundleExecutable</key>
+  <string>trackz-viz</string>
+  <key>CFBundleIconFile</key>
+  <string>Trackz</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleShortVersionString</key>
+  <string>@VERSION@</string>
+  <key>CFBundleVersion</key>
+  <string>@VERSION@</string>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+  <key>LSMinimumSystemVersion</key>
+  <string>11.0</string>
+  <key>LSApplicationCategoryType</key>
+  <string>public.app-category.productivity</string>
+  <key>NSHighResolutionCapable</key>
+  <true/>
+  <key>NSHumanReadableCopyright</key>
+  <string>Solworktech. AGPL-3.0-or-later.</string>
+</dict>
+</plist>

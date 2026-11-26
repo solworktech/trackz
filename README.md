@@ -51,7 +51,8 @@ Notes:
 
 - libwnck only sees X11 windows. On a Wayland session, native Wayland windows are invisible to it (devilspie2 had the
   same limitation); applications running under XWayland are tracked.
-- On macOS, window titles require Accessibility permission: allow the `trackz` binary (or the terminal you start it
+- On macOS, window titles require Accessibility permission: allow the `trackz` binary
+  (`/Applications/Trackz.app/Contents/MacOS/trackz` when installed from the disk image, or the terminal you start it
   from) under *System Settings → Privacy & Security → Accessibility*. Without it, application switches are still
   recorded, with the application name as the window title.
 - Only the title changes of the **focused** window are recorded.
@@ -88,7 +89,10 @@ Each [release](https://github.com/solworktech/trackz/releases) has:
 - **Arch Linux** (`.pkg.tar.zst`): the binaries, the desktop entry, icons and the unit; as usual on Arch, nothing
   starts by itself: `systemctl --user enable --now trackz`, or the autostart entry (see [Starting
   automatically](#starting-automatically)).
-- **macOS**: `tar.gz` archives (see [Starting automatically](#starting-automatically) for the LaunchAgent).
+- **macOS**: a disk image, `Trackz-<version>.dmg`, with `Trackz.app` (universal: Apple silicon and Intel): drag it to
+  Applications; opening it opens the viewer, and `Trackz.app/Contents/MacOS/trackz` is the recorder. Its *Read me*
+  says how to start the recorder at login (see [Starting automatically](#starting-automatically)). The app is signed
+  ad hoc, not notarized: the first time, right-click it and choose *Open*. Also `tar.gz` archives of the binaries.
 - **Windows**: the MSI installers (see [Windows installer](#windows-installer)).
 - `tar.gz` archives of the Linux binaries, with the unit, desktop entries and icons.
 
@@ -199,7 +203,10 @@ shared file in a directory they can all write to.
   `~/.config/autostart/` (or `/etc/xdg/autostart/` for all users). It runs `trackz autostart`, which leaves the
   session to the systemd unit where the unit is enabled and `graphical-session.target` is active (or where the unit
   is masked), so the two can be installed together.
-- **macOS**: see [packaging/launchd/org.solworktech.trackz.plist](./packaging/launchd/org.solworktech.trackz.plist).
+- **macOS**: the LaunchAgent [packaging/launchd/org.solworktech.trackz.plist](./packaging/launchd/org.solworktech.trackz.plist),
+  also in `Trackz.app/Contents/Resources`, starts `/Applications/Trackz.app/Contents/MacOS/trackz` (change the path
+  for other installs):
+  `cp /Applications/Trackz.app/Contents/Resources/org.solworktech.trackz.plist ~/Library/LaunchAgents/ && launchctl load -w ~/Library/LaunchAgents/org.solworktech.trackz.plist`.
 - **Windows**: the installer (below) offers it; without the installer,
   `powershell -ExecutionPolicy Bypass -File packaging\windows\install-autostart.ps1 -Exe C:\path\to\trackz.exe`.
 
@@ -236,7 +243,9 @@ cross-compiled from one: [.goreleaser.yaml](./.goreleaser.yaml) on Ubuntu (amd64
 an arm64 sysroot made in a container) makes the release with the changelog, the Linux archives and the deb, rpm and
 Arch packages;
 [.goreleaser.darwin.yaml](./.goreleaser.darwin.yaml) on macOS then adds the macOS archives (its Homebrew formula is
-commented out for now). The Windows MSIs come from the windows-installer workflow. The deb and rpm scripts are in
+commented out for now), and [packaging/macos/make-dmg.sh](./packaging/macos/make-dmg.sh) the disk image (GoReleaser
+makes disk images and app bundles only in its Pro edition). The macOS smoke test workflow (run by hand) builds the
+disk image, installs from it and records a session on a GitHub macOS runner. The Windows MSIs come from the windows-installer workflow. The deb and rpm scripts are in
 [packaging/linux](./packaging/linux). There are no BSD binaries: build from source there.
 
 To try the build locally, for this machine only: `goreleaser build --snapshot --clean --single-target`.
@@ -381,12 +390,12 @@ Settings are stored in `config.json` in the same directory as the default databa
 
 The logo source is [internal/assets/logo.svg](./internal/assets/logo.svg). `make icons` regenerates everything derived
 from it: the PNGs embedded in `trackz-viz`, the hicolor icon theme files under `packaging/icons`, `packaging/windows/trackz.ico`
-and the Windows resource files `cmd/trackz-viz/rsrc_windows_*.syso`, plus the installer's images and `License.rtf`
-(from `LICENSE`).
+and the Windows resource files `cmd/trackz-viz/rsrc_windows_*.syso`, the installer's images and `License.rtf`
+(from `LICENSE`), and the macOS app icon `packaging/macos/Trackz.icns`.
 
 The window icon is set as follows: on X11 by `trackz-viz` itself (`_NET_WM_ICON`); on Wayland from the installed
 `trackz-viz.desktop` and `trackz` icon (`make install` installs both); on Windows from the embedded resources; on macOS
-`trackz-viz` sets its Dock icon at start-up.
+`trackz-viz` sets its Dock icon at start-up (and `Trackz.app` has `Trackz.icns`).
 
 ## Data schema and notes
 

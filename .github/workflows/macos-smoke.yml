@@ -1,0 +1,66 @@
+---
+# A smoke test on a real macOS desktop, run by hand (Actions > macOS smoke
+# test > Run workflow), of what users get: the disk image is built
+# (packaging/macos/make-dmg.sh), Trackz.app installed from it into
+# /Applications, the recorder started with the app's LaunchAgent; it records
+# while focus moves between TextEdit, Preview, Safari, Terminal and Finder,
+# then the viewer is opened as an app. The artifacts are the disk image and
+# the test's results: the database, its records as text, the logs, a
+# screenshot per step and a screen recording. See .github/macos-smoke/.
+name: macOS smoke test
+
+"on":
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Disk image
+        run: |
+          version=$(git describe --tags --always --dirty)
+          packaging/macos/make-dmg.sh "$version" "$RUNNER_TEMP/dmg"
+
+      - name: Install
+        run: .github/macos-smoke/install-dmg.sh "$RUNNER_TEMP"/dmg/Trackz-*.dmg
+
+      # Nobody can answer the permission prompts here: grant Accessibility
+      # (window titles) and Screen Recording beforehand, to the installed
+      # programs and the app. Best effort; the test shows what it did not
+      # achieve.
+      - name: Grant permissions
+        continue-on-error: true
+        run: |
+          .github/macos-smoke/grant-permissions.sh \
+            /Applications/Trackz.app/Contents/MacOS/trackz \
+            /Applications/Trackz.app/Contents/MacOS/trackz-viz \
+            bundle:org.solworktech.trackz bundle:org.solworktech.Trackz
+
+      - name: Run
+        run: .github/macos-smoke/run.sh /Applications/Trackz.app "$RUNNER_TEMP/macos-smoke"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: macos-smoke
+          path: ${{ runner.temp }}/macos-smoke
+          if-no-files-found: warn
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: macos-dmg
+          path: ${{ runner.temp }}/dmg/*.dmg
+          if-no-files-found: warn

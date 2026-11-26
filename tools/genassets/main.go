@@ -12,6 +12,7 @@
 //	cmd/trackz-viz/rsrc_windows_<arch>.syso   Windows window/taskbar icon
 //	packaging/windows/wix/{banner,dialog}.bmp  installer images
 //	packaging/windows/wix/License.rtf          LICENSE for the installer
+//	packaging/macos/Trackz.icns                macOS application icon
 package main
 
 import (
@@ -72,6 +73,7 @@ func main() {
 		check(f.Close())
 	}
 	writeInstallerAssets(*root, svg)
+	writeICNS(filepath.Join(*root, "packaging", "macos", "Trackz.icns"), svg)
 	log.Printf("icons and installer images generated from %s", svgPath)
 }
 
