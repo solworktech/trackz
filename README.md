@@ -4,6 +4,12 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/solworktech/trackz.svg)](https://pkg.go.dev/github.com/solworktech/trackz)
 [![License][badge-license]][license]
 
+[![trackz-viz in the light theme: the dashboard, task groups, a group's windows and the filter](./screenshots/montage-light.png)](./screenshots)
+
+[![trackz-viz in the dark theme: a window's timeline with its task group drop-down, the task group editor, time per application and a filtered dashboard](./screenshots/montage-dark.png)](./screenshots)
+
+More in [screenshots](./screenshots).
+
 ## Intended use
 
 - Keeping track of how one's time is spent (working on project X, playing game Y, corresponding with colleague N, etc)
@@ -175,10 +181,9 @@ The directory holding the database must be writable by the user running `trackz`
 
 ### Recording several users
 
-`trackz` runs in the desktop session of the user whose windows it watches; the separate `devilspie` user and the
-`xauth` workaround are no longer needed. The process owner is read per window, so if you run `su - otheruser` in a
-terminal and start X apps from it, `process_owner` is still that user. To collect several users' activity in one
-database, point their `TRACKZ_DB` at a shared file in a directory they can all write to.
+The process owner is read per window, so if you run `su - otheruser` in a terminal and start X apps from it,
+`process_owner` is still that user. To collect several users' activity in one database, point their `TRACKZ_DB` at a
+shared file in a directory they can all write to.
 
 ### Starting automatically
 
