@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/solworktech/trackz/internal/config"
+	"github.com/solworktech/trackz/internal/groups"
 	"github.com/solworktech/trackz/internal/lockfile"
 	"github.com/solworktech/trackz/internal/queries"
 	"github.com/solworktech/trackz/internal/store"
@@ -30,6 +31,7 @@ type Service struct {
 	mu     sync.RWMutex
 	cfg    config.Config
 	titles *titles.Normalizer // cfg.TitleRules, compiled
+	groups *groups.Matcher    // cfg.TaskGroups, compiled (nil if invalid)
 }
 
 // Options configure Open.
@@ -71,12 +73,15 @@ func Open(ctx context.Context, opts Options) (*Service, error) {
 		s.now = time.Now
 	}
 	if err := s.setConfig(cfg); err != nil {
-		// Load falls back to the default rules for invalid ones, so this
-		// does not happen; keep going with the defaults if it does.
+		// Invalid task groups are kept (and reported), unused. Load falls
+		// back to the default title rules for invalid ones, so they do not
+		// fail here; keep going with the defaults if they do.
 		cfgErr = errors.Join(cfgErr, err)
-		cfg.TitleRules = config.Default().TitleRules
-		if err := s.setConfig(cfg); err != nil {
-			return nil, errors.Join(err, s.Close())
+		if s.titles == nil {
+			cfg.TitleRules = config.Default().TitleRules
+			if err := s.setConfig(cfg); err != nil && s.titles == nil {
+				return nil, errors.Join(err, s.Close())
+			}
 		}
 	}
 	// A broken config file is not fatal: defaults are used and the error
@@ -117,17 +122,66 @@ func (s *Service) UpdateConfig(cfg config.Config) error {
 	return s.setConfig(cfg)
 }
 
-// setConfig makes cfg current, with its title rules compiled.
+// ModifyConfig changes the settings with change, applied to the config
+// file as it is now (so changes made to it by hand since it was read, such
+// as task groups, are kept), and saves and applies the result.
+func (s *Service) ModifyConfig(change func(config.Config) (config.Config, error)) (config.Config, error) {
+	base, err := config.Load(s.configPath)
+	if err != nil {
+		base = s.Config() // unreadable: start from the settings in use
+	}
+	cfg, err := change(base)
+	if err != nil {
+		return cfg, err
+	}
+	return cfg, s.UpdateConfig(cfg)
+}
+
+// ReloadConfig reads the config file again (it may have been edited by
+// hand) and applies it. A file that cannot be parsed leaves the current
+// settings in place; invalid task groups are applied unused (see
+// setConfig) and reported.
+func (s *Service) ReloadConfig() error {
+	cfg, err := config.Load(s.configPath)
+	if err != nil {
+		return err
+	}
+	return s.setConfig(cfg)
+}
+
+// setConfig makes cfg current, with its title rules and task groups
+// compiled. Invalid title rules leave the configuration unchanged; invalid
+// task groups are kept but not used (no window is in a group) and
+// reported.
 func (s *Service) setConfig(cfg config.Config) error {
 	n, err := titles.New(cfg.TitleRules)
 	if err != nil {
 		return err
 	}
+	g, gErr := groups.New(cfg.TaskGroups)
+	if gErr != nil {
+		g, gErr = nil, fmt.Errorf("task groups (not used until fixed): %w", gErr)
+	}
 	s.mu.Lock()
-	s.cfg, s.titles = cfg, n
+	s.cfg, s.titles, s.groups = cfg, n, g
 	s.mu.Unlock()
 	store.SetTitleNormalizer(n)
-	return nil
+	norm := func(t string) string { return t }
+	if cfg.MergeTitles {
+		norm = n.Normalize
+	}
+	store.SetTaskGrouper(func(process, title string) string { return g.Group(process, norm(title)) })
+	return gErr
+}
+
+// TaskGroupsError reports why the configured task groups are not used,
+// if they are invalid.
+func (s *Service) TaskGroupsError() error {
+	cfg := s.Config()
+	if len(cfg.TaskGroups) == 0 {
+		return nil
+	}
+	return groups.Validate(cfg.TaskGroups)
 }
 
 // NormalizeTitle returns title as reports show it: with the title rules
@@ -221,6 +275,9 @@ func (s *Service) Run(ctx context.Context, v View, r Range, f Filter) (*Result, 
 	case ViewTimeSpent:
 		res.Kind = PieChart
 		res.Series, res.Hidden, err = s.timePerApp(ctx, r, f)
+	case ViewTaskGroups:
+		res.Kind = PieChart
+		res.Series, err = s.timePerGroup(ctx, r, f)
 	case ViewWindowActivity:
 		res.Kind = LineChart
 		res.Series, err = s.Activity(ctx, r, f)
@@ -239,6 +296,12 @@ func (s *Service) Dashboard(ctx context.Context, r Range, f Filter, limit int) (
 	if err != nil {
 		return nil, err
 	}
+	return s.dashboard(r, recs, limit), nil
+}
+
+// dashboard adds up recs (in r) per (process, window), keeping the top
+// `limit` (all when limit <= 0).
+func (s *Service) dashboard(r Range, recs []store.Record, limit int) *Dashboard {
 	title := s.titleFunc()
 	type key struct{ proc, window string }
 	totals := map[key]*Point{}
@@ -278,7 +341,7 @@ func (s *Service) Dashboard(ctx context.Context, r Range, f Filter, limit int) (
 			text(timefmt.Duration(int64(p.Value))), integer(int64(p.Value)),
 		})
 	}
-	return &Dashboard{Series: series, Table: t, Hidden: hidden}, nil
+	return &Dashboard{Series: series, Table: t, Hidden: hidden}
 }
 
 // dropSmall removes entries whose total is below the configured minimum

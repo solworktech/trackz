@@ -18,14 +18,22 @@ type Item struct {
 	Process, Title string
 	// Top Apps, Time Spent: an application (Process and Title empty).
 	App string
+	// Task Groups: a group, or (Ungrouped) the windows in none.
+	Group     string
+	Ungrouped bool
 }
 
 // IsZero reports whether it stands for nothing.
 func (it Item) IsZero() bool { return it == Item{} }
 
-// match reports whether rec belongs to it; title normalises window titles.
-func (it Item) match(rec store.Record, title func(string) string) bool {
-	if it.Process != "" || it.Title != "" {
+// match reports whether rec belongs to it; title normalises window titles,
+// group returns a record's task group (see Service.groupOf).
+func (it Item) match(rec store.Record, title func(string) string, group func(store.Record) (string, bool)) bool {
+	switch {
+	case it.Group != "" || it.Ungrouped:
+		g, counted := group(rec)
+		return counted && g == it.Group
+	case it.Process != "" || it.Title != "":
 		return rec.ProcessName == it.Process && title(rec.WindowName) == it.Title
 	}
 	return rec.AppName == it.App
@@ -115,6 +123,7 @@ func (s *Service) Timeline(ctx context.Context, it Item, r Range, f Filter) (Ser
 		return Series{}, err
 	}
 	title := s.titleFunc()
+	group := s.groupFunc(title)
 	cfg := s.Config()
 	loc := cfg.Location()
 	from, to := r.Bounds(s.now(), loc)
@@ -161,7 +170,7 @@ func (s *Service) Timeline(ctx context.Context, it Item, r Range, f Filter) (Ser
 	counts := make([]int, len(pts))
 	lo, hi := from.Unix(), to.Unix()
 	for _, rec := range recs {
-		if rec.End == 0 || !it.match(rec, title) {
+		if rec.End == 0 || !it.match(rec, title, group) {
 			continue
 		}
 		a, b := max(rec.Start, lo), min(rec.End, hi)

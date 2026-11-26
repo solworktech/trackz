@@ -6,7 +6,8 @@
 //     "trackz" matches "trackz-viz" (only letters and digits make up words;
 //     any space in the phrase matches any run of spaces);
 //   - a line written /.../ is a regular expression (Go syntax), ignoring
-//     case;
+//     case; flags may follow the closing slash, as in other languages:
+//     i (redundant), m, s and U (see regexp/syntax), e.g. /^todo/m;
 //   - blank lines are ignored.
 package patterns
 
@@ -60,13 +61,33 @@ func Compile(patterns []string) (Set, error) {
 }
 
 // isRegexp reports whether p is written as a regular expression (/.../).
-func isRegexp(p string) bool {
-	return len(p) >= 2 && strings.HasPrefix(p, "/") && strings.HasSuffix(p, "/")
+// regexpFlags are the flags allowed after a regular expression's closing
+// slash.
+const regexpFlags = "imsU"
+
+// splitRegexp returns the expression and flags of p written as a regular
+// expression (/expr/flags), and whether it is one.
+func splitRegexp(p string) (expr, flags string, ok bool) {
+	if len(p) < 2 || p[0] != '/' {
+		return "", "", false
+	}
+	end := strings.LastIndexByte(p, '/')
+	if end == 0 {
+		return "", "", false
+	}
+	flags = p[end+1:]
+	for _, f := range flags {
+		if !strings.ContainsRune(regexpFlags, f) {
+			return "", "", false // not flags: a plain pattern such as /usr/bin
+		}
+	}
+	return p[1:end], flags, true
 }
 
 func compile(p string) (*regexp.Regexp, error) {
-	if isRegexp(p) {
-		re, err := regexp.Compile("(?i)" + p[1:len(p)-1])
+	if expr, flags, ok := splitRegexp(p); ok {
+		flags = strings.ReplaceAll(flags, "i", "")
+		re, err := regexp.Compile("(?i" + flags + ")" + expr)
 		if err != nil {
 			return nil, fmt.Errorf("pattern %s: %w", p, unwrapSyntax(err))
 		}

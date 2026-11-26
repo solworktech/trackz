@@ -61,7 +61,7 @@ type UI struct {
 
 	mu      sync.Mutex
 	results map[report.View]*viewData
-	drills  map[report.View]*drill // open drill-downs (timelines)
+	drills  map[report.View][]*drill // open drill-downs (timelines), innermost last
 	cfgGen  int
 	dataGen int // guarded by mu; bumped when the data changed (a status)
 
@@ -75,6 +75,7 @@ type UI struct {
 	away      awayDialog
 
 	dashPie, spentPie, customPie pieChart
+	groupsPie                    pieChart
 	dashTable, custTbl           tableView
 	topBars, customBars          barChart
 	activity, customLine         lineChart
@@ -88,6 +89,7 @@ type UI struct {
 	saveQuery                    widget.Clickable
 	runQuery                     widget.Clickable
 	chartKind                    widget.Enum
+	groupView                    widget.Enum // view of a task group's drill-down (groupViews)
 	custom                       customData
 	settings                     settingsForm
 	statusMu                     sync.Mutex // guards the status bar message
@@ -141,6 +143,8 @@ func New(svc *report.Service, opts ...app.Option) *UI {
 		// Time Spent's pie is 25% smaller than the space allows, and its
 		// labels are short (application names).
 		spentPie: pieChart{scale: 0.75, compact: true},
+		// So is Task Groups' (group names).
+		groupsPie: pieChart{scale: 0.75, compact: true, noIcons: true},
 		// Window Activity's hover box shows the window switches, not the
 		// time: a record's time all counts where it started, which reads
 		// as more (or less) than the bucket really had.
@@ -155,7 +159,7 @@ func New(svc *report.Service, opts ...app.Option) *UI {
 		presets:  make([]widget.Clickable, len(report.Presets)+1),
 		rng:      report.Preset(report.Today),
 		results:  map[report.View]*viewData{},
-		drills:   map[report.View]*drill{},
+		drills:   map[report.View][]*drill{},
 	}
 	// System fonts as before, plus Go Mono (bundled) for the SQL editor.
 	u.th.Shaper = text.NewShaper(text.WithCollection(monoFaces()))
@@ -165,6 +169,7 @@ func New(svc *report.Service, opts ...app.Option) *UI {
 	u.exportPath.SingleLine = true
 	u.queryEd.ed.SetText(defaultQuery)
 	u.chartKind.Value = report.BarChart.String()
+	u.groupView.Value = groupBars
 	today := svc.Today()
 	u.customFrom, u.customTo = today.AddDays(-6), today
 	u.settings.theme.Value = svc.Config().Theme
@@ -312,7 +317,7 @@ func (u *UI) ensure(force bool) {
 	if v == report.ViewCustomQuery || v == report.ViewSettings {
 		return
 	}
-	u.ensureTimeline(force)
+	u.ensureDrill(force)
 	key := u.resultKey()
 	u.mu.Lock()
 	d := u.results[v]
@@ -416,6 +421,7 @@ func (u *UI) handleInput(gtx C) {
 		}
 	}
 	if u.refresh.Clicked(gtx) {
+		u.reloadConfig()
 		u.applyRowLimit()
 		u.ensure(true)
 	}
@@ -436,6 +442,20 @@ func (u *UI) handleInput(gtx C) {
 	}
 }
 
+// reloadConfig rereads the config file, for edits made by hand (task
+// groups, say), and recomputes the views.
+func (u *UI) reloadConfig() {
+	old := u.svc.Config().RowLimit
+	if err := u.svc.ReloadConfig(); err != nil {
+		u.setStatus(true, "Config file: %v", err)
+	}
+	u.cfgGen++
+	if cfg := u.svc.Config(); cfg.RowLimit != old {
+		u.rowLimit.SetText(strconv.Itoa(cfg.RowLimit)) // the file's, not the field's
+	}
+	u.settings.loaded = false // the Settings form shows the file's values
+}
+
 func (u *UI) applyRowLimit() {
 	n, err := strconv.Atoi(strings.TrimSpace(u.rowLimit.Text()))
 	cfg := u.svc.Config()
@@ -447,8 +467,10 @@ func (u *UI) applyRowLimit() {
 	if n == cfg.RowLimit {
 		return
 	}
-	cfg.RowLimit = n
-	if err := u.svc.UpdateConfig(cfg); err != nil {
+	if _, err := u.svc.ModifyConfig(func(c config.Config) (config.Config, error) {
+		c.RowLimit = n
+		return c, nil
+	}); err != nil {
 		u.setStatus(true, "Could not save settings: %v", err)
 		return
 	}
@@ -459,7 +481,10 @@ func (u *UI) exportTable() *store.Table {
 	if u.view == report.ViewCustomQuery {
 		return u.custom.table
 	}
-	if s, ok := u.drillSeries(); ok {
+	if w, s, ok := u.drillTable(); ok {
+		if w != nil {
+			return w.Table
+		}
 		return report.TableFromSeries(s)
 	}
 	res, _, _ := u.current()
@@ -746,7 +771,7 @@ func (u *UI) layoutContent(gtx C) D {
 				layout.Flexed(0.45, func(gtx C) D {
 					pts := res.Series.Points // the table's rows
 					u.dashTable.rowClick = func(r int) bool { return r < len(pts) && hasTimeline(pts[r]) }
-					return u.dashTable.layout(gtx, u.th, res.Table, u.dashboardColumns(res))
+					return u.dashTable.layout(gtx, u.th, res.Table, u.windowColumns(res.Table, pts))
 				}),
 				layout.Rigid(u.layoutExport),
 			)
@@ -754,6 +779,8 @@ func (u *UI) layoutContent(gtx C) D {
 			return u.topBars.layout(gtx, u.th, u.icons, res.Series)
 		case report.ViewTimeSpent:
 			return u.spentPie.layout(gtx, u.th, u.icons, res.Series)
+		case report.ViewTaskGroups:
+			return u.layoutTaskGroups(gtx, res)
 		case report.ViewWindowActivity:
 			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 				layout.Flexed(1, func(gtx C) D { return u.activity.layout(gtx, u.th, res.Series) }),
@@ -906,8 +933,10 @@ func (u *UI) loadSettings() {
 	u.settings.loaded = true
 }
 
-func (u *UI) formSettings() (config.Config, error) {
-	cfg := u.svc.Config()
+func (u *UI) formSettings() (config.Config, error) { return u.formSettingsOnto(u.svc.Config()) }
+
+// formSettingsOnto returns cfg with the values of the Settings form.
+func (u *UI) formSettingsOnto(cfg config.Config) (config.Config, error) {
 	cfg.TimeZone = strings.TrimSpace(u.settings.tz.Text())
 	cfg.DateFormat = u.settings.dateFmt.Text()
 	cfg.TimeFormat = u.settings.timeFmt.Text()
@@ -941,10 +970,7 @@ func (u *UI) layoutSettings(gtx C) D {
 		s.titleRules.SetText(titles.Format(titles.DefaultRules))
 	}
 	if s.save.Clicked(gtx) {
-		cfg, err := u.formSettings()
-		if err == nil {
-			err = u.svc.UpdateConfig(cfg)
-		}
+		cfg, err := u.svc.ModifyConfig(u.formSettingsOnto)
 		if err != nil {
 			u.setStatus(true, "Settings not saved: %v", err)
 		} else {
@@ -1162,17 +1188,16 @@ func (g *windowGeometry) sizeOption() []app.Option {
 	)}
 }
 
-// dashboardColumns shows the dashboard table as Process Name (with the
-// application's icon), Window Title and Duration, sorting the duration by
-// its seconds. The table's other columns (seconds) are for the CSV export.
-func (u *UI) dashboardColumns(res *report.Result) []tableColumn {
-	t := res.Table
+// windowColumns shows a table of windows (the Dashboard's, Ungrouped's)
+// as Process Name (with the application's icon), Window Title and
+// Duration, sorting the duration by its seconds; pts are the table's rows.
+// The table's other columns (seconds) are for the CSV export.
+func (u *UI) windowColumns(t *store.Table, pts []report.Point) []tableColumn {
 	proc, win := t.ColumnIndex("process_name"), t.ColumnIndex("window_name")
 	dur, secs := t.ColumnIndex("duration"), t.ColumnIndex("seconds")
 	if proc < 0 || win < 0 || dur < 0 || secs < 0 {
 		return nil
 	}
-	pts := res.Series.Points
 	return []tableColumn{
 		{title: "Process Name", src: proc, sortBy: proc, weight: 2.2, icon: func(row int) *paint.ImageOp {
 			if row < len(pts) { // the table's rows are the series' points

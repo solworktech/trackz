@@ -158,13 +158,14 @@ const (
 	ViewDashboard View = iota
 	ViewTopApps
 	ViewTimeSpent
+	ViewTaskGroups
 	ViewWindowActivity
 	ViewCustomQuery
 	ViewSettings
 )
 
 // Views lists the views in UI order.
-var Views = []View{ViewDashboard, ViewTopApps, ViewTimeSpent, ViewWindowActivity, ViewCustomQuery, ViewSettings}
+var Views = []View{ViewDashboard, ViewTopApps, ViewTimeSpent, ViewTaskGroups, ViewWindowActivity, ViewCustomQuery, ViewSettings}
 
 func (v View) String() string {
 	switch v {
@@ -174,6 +175,8 @@ func (v View) String() string {
 		return "Top Apps"
 	case ViewTimeSpent:
 		return "Time Spent"
+	case ViewTaskGroups:
+		return "Task Groups"
 	case ViewWindowActivity:
 		return "Window Activity"
 	case ViewCustomQuery:

@@ -16,6 +16,7 @@ import (
 	"time"
 	_ "time/tzdata" // IANA zones on systems without a zoneinfo database (Windows)
 
+	"github.com/solworktech/trackz/internal/groups"
 	"github.com/solworktech/trackz/internal/timefmt"
 	"github.com/solworktech/trackz/internal/titles"
 )
@@ -74,6 +75,10 @@ type Config struct {
 	// TitleRules are applied in order to normalise titles (see package
 	// titles); they default to titles.DefaultRules.
 	TitleRules []titles.Rule `json:"title_rules"`
+	// TaskGroups are the task groups (customers, projects) reports can add
+	// time up by; see package groups. Load keeps them even when invalid,
+	// so a mistake in the file does not lose them; trackz-viz reports it.
+	TaskGroups []groups.Group `json:"task_groups,omitempty"`
 }
 
 // Default returns the built-in defaults.
@@ -121,7 +126,7 @@ func (c Config) Validate() error {
 	if _, err := titles.New(c.TitleRules); err != nil {
 		return err
 	}
-	return nil
+	return groups.Validate(c.TaskGroups)
 }
 
 // Location resolves the configured time zone, falling back to time.Local.

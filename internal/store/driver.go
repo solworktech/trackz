@@ -12,6 +12,14 @@ import (
 
 const driverName = "sqlite"
 
+// taskGrouper backs the task_group() SQL function: it returns the task
+// group of a window (process name, recorded title), "" for none.
+var taskGrouper atomic.Pointer[func(process, title string) string]
+
+// SetTaskGrouper sets the function task_group() applies (none: every
+// window is in no group).
+func SetTaskGrouper(f func(process, title string) string) { taskGrouper.Store(&f) }
+
 // titleNormalizer backs the norm_title() SQL function.
 var titleNormalizer atomic.Pointer[titles.Normalizer]
 
@@ -35,5 +43,32 @@ func init() {
 			default:
 				return nil, fmt.Errorf("norm_title: expected text, got %T", v)
 			}
+		})
+	// task_group(process_name, window_name) gives custom queries the task
+	// groups of the Task Groups view (NULL for windows in none), e.g.
+	// GROUP BY task_group(process_name, window_name).
+	sqlite.MustRegisterDeterministicScalarFunction("task_group", 2,
+		func(_ *sqlite.FunctionContext, args []driver.Value) (driver.Value, error) {
+			var s [2]string
+			for i, a := range args {
+				switch v := a.(type) {
+				case nil:
+					return nil, nil
+				case string:
+					s[i] = v
+				case []byte:
+					s[i] = string(v)
+				default:
+					return nil, fmt.Errorf("task_group: expected text, got %T", v)
+				}
+			}
+			f := taskGrouper.Load()
+			if f == nil {
+				return nil, nil
+			}
+			if g := (*f)(s[0], s[1]); g != "" {
+				return g, nil
+			}
+			return nil, nil
 		})
 }

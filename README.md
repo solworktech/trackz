@@ -255,7 +255,27 @@ $ trackz-viz            # or: trackz-viz -db /path/to/trackz.db
   currently in focus is counted up to now. The heading shows how many records were left out for being shorter than the minimum duration.
 - **Top Apps** (bar chart), **Time Spent** per app (pie chart), **Window Activity** over time (focus time per hour,
   or per day for longer ranges).
-- **Timelines**: in the Dashboard, Top Apps and Time Spent, hovering over an entry also shows when it was first and
+- **Task Groups**: the time per customer or project across applications. A task group has title patterns (the
+  filter's syntax: whole words or `/regular expressions/`), patterns that rule a window out, process names whose
+  windows belong to it whatever their title, and windows (process and title, as on the Dashboard) assigned to it by
+  hand. A window belongs to the group it was assigned to, else to the first group, in order, that one of its title
+  patterns or processes matches and none of its exclusions; so order the groups to settle overlaps. The view shows the
+  time per group as a pie, with *Ungrouped* (windows in no group) last; screen lock, and statuses in no group (breaks),
+  count in neither. Clicking a group (or *Ungrouped*) shows its windows (process and title, the top *Rows* by time,
+  as on the Dashboard) as bars, a pie or a table, or its timeline, as chosen at the top right (bars at first; the
+  choice is kept for the next group); clicking a window shows that window's timeline, and *Back* goes up one level. Groups are stored as `task_groups` in
+  `config.json`:
+  ```json
+  "task_groups": [
+    {"name": "trackz", "include": ["trackz"]},
+    {"name": "GenOrg", "include": ["GenOrg", "Jim Smith", "/widget-(api|ui)/"], "exclude": ["newsletter"],
+     "processes": ["genorg-vpn"], "windows": [{"process": "xterm", "title": "bash - build box"}]}
+  ]
+  ```
+  Groups with an invalid pattern, a missing or repeated name are kept but not used, and the view says why. *Refresh*
+  rereads `config.json`, so edits made to it by hand apply without restarting; changes saved from the app (Rows,
+  Settings) are applied to the file as it is then, so they keep such edits.
+- **Timelines**: in the Dashboard, Top Apps, Time Spent and Task Groups, hovering over an entry also shows when it was first and
   last in focus in the range (times for a single day, dates and times for longer ranges), and clicking it (its slice,
   bar, legend entry or table row) shows its focus time per hour (a single day), per day (up to 31 days) or per week
   (from Monday; longer ranges) in place of the chart, until *Back*. A focus period that spans hours or days counts in
@@ -265,11 +285,11 @@ $ trackz-viz            # or: trackz-viz -db /path/to/trackz.db
   those matching any of others, and to exclude applications by unticking them in the list of applications used in the
   range. Patterns go one per line; a plain one is matched on whole words, ignoring case (`trackz` matches `trackz-viz`
   but not `trackzilla`; `Jim Smith` matches `Re: Jim Smith's PR`), and `/.../` is a regular expression (Go syntax,
-  ignoring case), e.g. `/inv-\d+/`. In the pattern fields Enter starts a new line; Ctrl+Enter (Cmd+Enter on macOS)
-  applies. The filter applies to every view but Custom Query (and to CSV exports) until cleared. While it is on, the
-  button reads *Filter (on)…* and the heading says what is filtered, e.g.
-  `Filtered: titles with "invoice" or "/inv-\d+/" · titles without "draft" · excluding Firefox`, with a *Clear filter*
-  button.
+  ignoring case), e.g. `/inv-\d+/`; flags may follow the closing slash (`i`, `m`, `s`, `U`), e.g. `/^todo/m`. In the
+  pattern fields Enter starts a new line; Ctrl+Enter (Cmd+Enter on macOS) applies. The filter applies to every view
+  but Custom Query (and to CSV exports) until cleared. While it is on, the button reads *Filter (on)…* and the heading
+  says what is filtered, e.g. `Filtered: titles with "invoice" or "/inv-\d+/" · titles without "draft" · excluding
+  Firefox`, with a *Clear filter* button.
 - **Set Status**: records time away from the computer's normal use. Pick *Out to lunch*, *Meeting*, *Coffee break*,
   *Phone call*, *Away from desk*, *Errand* or type another status, then *Start Now*: a record with `trackz-viz` as the
   application (`app_name`), the status as the window title (`window_name`) and `trackz-status` as `process_name` is
@@ -299,6 +319,9 @@ $ trackz-viz            # or: trackz-viz -db /path/to/trackz.db
   ```
   `norm_title(window_name)` applies the title rules (see *Merged titles*), so `SELECT norm_title(window_name) AS
   label, ... GROUP BY process_name, label` groups titles the way the dashboard does.
+  `task_group(process_name, window_name)` returns a window's task group (NULL for none), so
+  `SELECT COALESCE(task_group(process_name, window_name), 'Ungrouped') AS label, ... GROUP BY label` adds time up per
+  group (screen lock and breaks included, unless the query leaves them out).
 - **Merged titles**: web apps put notification counts in the title (`(3) YouTube`, `Inbox (12) - … - Gmail`,
   `(5) Feed | LinkedIn`). Reports add such titles up as one entry (the tooltip says how many titles were merged);
   the recorded titles are not changed. The rules are regular expressions, applied in order, editable in Settings

@@ -29,7 +29,13 @@ func TestMatch(t *testing.T) {
 		{"éclair", "Unéclair", false},
 		{"/gen(org|co)/", "GenCo portal", true},
 		{"/^vim/", "notes - vim", false},
-		{"/", "a / b", true}, // a single slash is plain text
+		{"/", "a / b", true},                               // a single slash is plain text
+		{"/Gmail|Google|youtube/i", "Inbox - Gmail", true}, // flags after the slash
+		{"/Gmail|Google|youtube/i", "YouTube", true},
+		{"/^todo/m", "notes\ntodo: x", true},
+		{"/^todo/", "notes\ntodo: x", false},
+		{"/usr/bin", "ls /usr/bin", true}, // "bin" is not flags: plain
+		{"/usr/bin", "/usr/binary", false},
 	} {
 		s, err := Parse(c.pattern)
 		if err != nil {

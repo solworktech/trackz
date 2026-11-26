@@ -119,6 +119,9 @@ type pieChart struct {
 	// compact puts each value right after the longest label instead of at
 	// the right edge: for short labels (application names).
 	compact bool
+	// noIcons leaves out the legend's icon column (Task Groups: groups
+	// have no icons).
+	noIcons bool
 	rows    []widget.Clickable // legend entries
 	// clicked is the point whose slice or legend entry was clicked in the
 	// last layout, if it has a timeline (see takeClick).
@@ -335,7 +338,10 @@ func (pc *pieChart) legendList(gtx C, th *material.Theme, ic *iconCache, s repor
 		}
 	}
 	if pc.compact {
-		fixed := gtx.Dp(12+6) + gtx.Dp(18+6) + gtx.Dp(legendValueGap) + valueW + gtx.Dp(barGap)
+		fixed := gtx.Dp(12+6) + gtx.Dp(legendValueGap) + valueW + gtx.Dp(barGap)
+		if !pc.noIcons {
+			fixed += gtx.Dp(18 + 6)
+		}
 		labelW = min(labelW, max(0, gtx.Constraints.Max.X-fixed))
 	}
 	if len(pc.rows) != len(s.Points) {
@@ -393,6 +399,9 @@ func (pc *pieChart) legendRow(gtx C, th *material.Theme, ic *iconCache, p report
 				return D{Size: image.Pt(sz+gtx.Dp(6), sz)}
 			}),
 			layout.Rigid(func(gtx C) D {
+				if pc.noIcons {
+					return D{}
+				}
 				return layout.Inset{Right: 6}.Layout(gtx, func(gtx C) D {
 					return layoutIcon(gtx, ic.get(p), 18)
 				})
