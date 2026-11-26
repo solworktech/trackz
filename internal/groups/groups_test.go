@@ -64,3 +64,35 @@ func TestNewChecks(t *testing.T) {
 		t.Error(err)
 	}
 }
+
+func TestExplainAndAssign(t *testing.T) {
+	gs := []Group{
+		{Name: "A", Include: []string{"alpha"}, Processes: []string{"vim"}},
+		{Name: "B", Windows: []Window{{"xterm", "bash"}}},
+	}
+	m, err := New(gs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		process, title, group string
+		how                   How
+	}{
+		{"firefox", "alpha docs", "A", ByTitle},
+		{"vim", "notes", "A", ByProcess},
+		{"xterm", "bash", "B", ByHand},
+		{"xterm", "zsh", "", None},
+	} {
+		if g, how := m.Explain(c.process, c.title); g != c.group || how != c.how {
+			t.Errorf("%s %q: %q %v, want %q %v", c.process, c.title, g, how, c.group, c.how)
+		}
+	}
+	w := Window{"xterm", "bash"}
+	moved := Assign(gs, w, "A")
+	if len(moved[0].Windows) != 1 || len(moved[1].Windows) != 0 || len(gs[1].Windows) != 1 {
+		t.Errorf("assign to A: %+v (original %+v)", moved, gs)
+	}
+	if cleared := Assign(moved, w, ""); len(cleared[0].Windows)+len(cleared[1].Windows) != 0 {
+		t.Errorf("unassign: %+v", cleared)
+	}
+}

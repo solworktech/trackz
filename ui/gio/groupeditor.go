@@ -184,15 +184,6 @@ func (e *groupEditor) toggleProcess(p string) {
 	e.ps.SetText(strings.Join(kept, "\n"))
 }
 
-// newGroupName returns "New group", or "New group 2" etc. if taken.
-func (e *groupEditor) newGroupName() string {
-	name := "New group"
-	for n := 2; slices.ContainsFunc(e.groups, func(g groups.Group) bool { return strings.EqualFold(g.Name, name) }); n++ {
-		name = "New group " + strconv.Itoa(n)
-	}
-	return name
-}
-
 // handleGroupEditor processes the editor's buttons.
 func (u *UI) handleGroupEditor(gtx C) {
 	e := &u.groupEdit
@@ -231,8 +222,14 @@ func (u *UI) handleGroupEditor(gtx C) {
 	}
 	switch {
 	case e.add.Clicked(gtx):
-		e.groups = append(e.groups, groups.Group{Name: e.newGroupName()})
-		e.sel = len(e.groups) - 1
+		// A group still without a name is selected again rather than
+		// another added.
+		if i := slices.IndexFunc(e.groups, func(g groups.Group) bool { return g.Name == "" }); i >= 0 {
+			e.sel = i
+		} else {
+			e.groups = append(e.groups, groups.Group{})
+			e.sel = len(e.groups) - 1
+		}
 		gtx.Execute(key.FocusCmd{Tag: &e.name})
 	case e.del.Clicked(gtx) && e.sel >= 0:
 		e.groups = slices.Delete(e.groups, e.sel, e.sel+1)
@@ -275,8 +272,12 @@ func (u *UI) ensurePreview(gtx C) {
 	if e.sel < 0 {
 		return
 	}
-	draft := cloneGroups(e.groups)
-	name := draft[e.sel].Name
+	name := e.groups[e.sel].Name
+	if name == "" {
+		return // nothing to preview until it has a name
+	}
+	// Groups not named yet take nothing (and would make the draft invalid).
+	draft := slices.DeleteFunc(cloneGroups(e.groups), func(g groups.Group) bool { return g.Name == "" })
 	b, err := json.Marshal(draft)
 	if err != nil {
 		return
@@ -626,6 +627,11 @@ func (u *UI) layoutAssigned(gtx C, g groups.Group) D {
 // range, and those it matches but does not take, and why.
 func (u *UI) layoutGroupPreview(gtx C) D {
 	e := &u.groupEdit
+	if e.sel >= 0 && e.groups[e.sel].Name == "" {
+		l := material.Body2(u.th, "Name the group to see what it takes.")
+		l.Color = cs.muted
+		return layout.Inset{Top: 8}.Layout(gtx, l.Layout)
+	}
 	u.mu.Lock()
 	prev, err, loading := e.prev, e.prevErr, e.prevLoading
 	u.mu.Unlock()

@@ -13,6 +13,7 @@ package groups
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/solworktech/trackz/internal/patterns"
@@ -97,19 +98,68 @@ func Validate(groups []Group) error {
 // Group returns the group of a window of process with title (as reports
 // show it); "" when it belongs to none.
 func (m *Matcher) Group(process, title string) string {
+	g, _ := m.Explain(process, title)
+	return g
+}
+
+// How says why a window belongs to its group.
+type How int
+
+const (
+	None      How = iota // in no group
+	ByHand               // assigned by hand
+	ByTitle              // an include pattern matches its title
+	ByProcess            // its process is one of the group's
+)
+
+func (h How) String() string {
+	switch h {
+	case ByHand:
+		return "assigned"
+	case ByTitle:
+		return "by title"
+	case ByProcess:
+		return "by process"
+	}
+	return "none"
+}
+
+// Explain returns the group of a window, as Group, and why.
+func (m *Matcher) Explain(process, title string) (string, How) {
 	if m == nil {
-		return ""
+		return "", None
 	}
 	if g, ok := m.manual[Window{process, title}]; ok {
-		return g
+		return g, ByHand
 	}
 	proc := strings.ToLower(process)
 	for _, g := range m.groups {
-		if (g.include.Match(title) || g.processes[proc]) && !g.exclude.Match(title) {
-			return g.name
+		if g.exclude.Match(title) {
+			continue
+		}
+		switch {
+		case g.include.Match(title):
+			return g.name, ByTitle
+		case g.processes[proc]:
+			return g.name, ByProcess
 		}
 	}
-	return ""
+	return "", None
+}
+
+// Assign returns groups with the window w assigned by hand to the group
+// named name, and to no other; with name "" it is assigned to none (its
+// patterns and processes decide again).
+func Assign(gs []Group, w Window, name string) []Group {
+	out := make([]Group, len(gs))
+	for i, g := range gs {
+		g.Windows = slices.DeleteFunc(slices.Clone(g.Windows), func(x Window) bool { return x == w })
+		if g.Name == name {
+			g.Windows = append(g.Windows, w)
+		}
+		out[i] = g
+	}
+	return out
 }
 
 // Candidate reports whether the group named name would take a window of

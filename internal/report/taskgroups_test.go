@@ -206,3 +206,53 @@ func TestPreviewGroup(t *testing.T) {
 		t.Errorf("processes %+v", procs)
 	}
 }
+
+func TestAssignWindowAndGroupFilter(t *testing.T) {
+	s, st := newService(t, "UTC")
+	cfg := s.Config()
+	cfg.TaskGroups = []groups.Group{{Name: "trackz", Include: []string{"trackz"}}, {Name: "GenOrg"}}
+	if err := s.UpdateConfig(cfg); err != nil {
+		t.Fatal(err)
+	}
+	base := testNow.Add(-3 * time.Hour)
+	add(t, st, "xterm", "XTerm", "bash", base, 600)
+	add(t, st, "vim", "Vim", "trackz/main.go", base.Add(time.Hour), 300)
+	add(t, st, store.SleepProcessName, store.SleepAppName, "locked", base.Add(2*time.Hour), 200)
+	ctx := context.Background()
+
+	if g, how := s.WindowGroup("vim", "trackz/main.go"); g != "trackz" || how != groups.ByTitle {
+		t.Errorf("vim: %q %v", g, how)
+	}
+	if err := s.AssignWindow("xterm", "bash", "GenOrg"); err != nil {
+		t.Fatal(err)
+	}
+	if g, how := s.WindowGroup("xterm", "bash"); g != "GenOrg" || how != groups.ByHand {
+		t.Errorf("xterm after assigning: %q %v", g, how)
+	}
+	if err := s.AssignWindow("xterm", "bash", "Nope"); err == nil {
+		t.Error("assigning to a missing group must fail")
+	}
+	total := func(f Filter) float64 {
+		res, err := s.Run(ctx, ViewTimeSpent, Preset(Today), f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res.Series.Total()
+	}
+	if got := total(Filter{ExcludeGroups: []string{"GenOrg"}}); got != 500 { // screen lock stays
+		t.Errorf("excluding GenOrg: %v", got)
+	}
+	if err := s.AssignWindow("xterm", "bash", ""); err != nil {
+		t.Fatal(err)
+	}
+	if got := total(Filter{ExcludeUngrouped: true}); got != 500 {
+		t.Errorf("excluding Ungrouped: %v", got)
+	}
+	f := Filter{ExcludeGroups: []string{"trackz"}, ExcludeUngrouped: true}
+	if got := f.Describe(); got != "excluding groups trackz, Ungrouped" {
+		t.Errorf("describe %q", got)
+	}
+	if (Filter{ExcludeUngrouped: true}).Key() == (Filter{}).Key() {
+		t.Error("key must reflect group exclusions")
+	}
+}

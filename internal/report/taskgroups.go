@@ -2,7 +2,10 @@ package report
 
 import (
 	"context"
+	"fmt"
+	"slices"
 
+	"github.com/solworktech/trackz/internal/config"
 	"github.com/solworktech/trackz/internal/groups"
 	"github.com/solworktech/trackz/internal/store"
 )
@@ -187,4 +190,37 @@ func (s *Service) Processes(ctx context.Context, r Range) ([]Point, error) {
 		pts = append(pts, *byProc[k])
 	}
 	return topN(pts, 0), nil
+}
+
+// WindowGroup returns the task group of a window (process and title as
+// reports show it, as in Item) and why it is in it.
+func (s *Service) WindowGroup(process, title string) (string, groups.How) {
+	s.mu.RLock()
+	m := s.groups
+	s.mu.RUnlock()
+	return m.Explain(process, title)
+}
+
+// GroupNames returns the names of the configured task groups, in order.
+func (s *Service) GroupNames() []string {
+	gs := s.Config().TaskGroups
+	names := make([]string, len(gs))
+	for i, g := range gs {
+		names[i] = g.Name
+	}
+	return names
+}
+
+// AssignWindow assigns a window (process and title as reports show it) by
+// hand to the task group named group, or with "" to none, and saves the
+// task groups (to the config file as it is now).
+func (s *Service) AssignWindow(process, title, group string) error {
+	_, err := s.ModifyConfig(func(c config.Config) (config.Config, error) {
+		if group != "" && !slices.ContainsFunc(c.TaskGroups, func(g groups.Group) bool { return g.Name == group }) {
+			return c, fmt.Errorf("no task group %q", group)
+		}
+		c.TaskGroups = groups.Assign(c.TaskGroups, groups.Window{Process: process, Title: title}, group)
+		return c, nil
+	})
+	return err
 }

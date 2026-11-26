@@ -264,6 +264,9 @@ $ trackz-viz            # or: trackz-viz -db /path/to/trackz.db
   count in neither. Clicking a group (or *Ungrouped*) shows its windows (process and title, the top *Rows* by time,
   as on the Dashboard) as bars, a pie or a table, or its timeline, as chosen at the top right (bars at first; the
   choice is kept for the next group); clicking a window shows that window's timeline, and *Back* goes up one level.
+  A window's timeline (from the Dashboard, a group or anywhere else) has a *Group: …* drop-down saying which group the
+  window is in and why (by title, by process, or assigned); choosing a group assigns the window to it by hand, and
+  *Not assigned (patterns decide)* undoes that. Assignments are saved at once.
   *Edit groups…* opens the editor in place of the chart: the groups in order (add, delete, move up or down), and for
   the selected one its name, its title patterns and exclusions, its processes (typed, or ticked in the list of
   processes with time in the range, which a search box narrows down: text it contains, or a `/regular expression/`), and the windows assigned to it by hand (each can be removed; those with no time
@@ -289,7 +292,7 @@ $ trackz-viz            # or: trackz-viz -db /path/to/trackz.db
   filter, and is what *Export CSV* exports while it is shown.
 - **Filter**: *Filter…* opens a dialog to keep only windows whose title matches any of some patterns, to leave out
   those matching any of others, and to exclude applications by unticking them in the list of applications used in the
-  range. Patterns go one per line; a plain one is matched on whole words, ignoring case (`trackz` matches `trackz-viz`
+  range, and task groups (or *Ungrouped*) by unticking them in theirs. Patterns go one per line; a plain one is matched on whole words, ignoring case (`trackz` matches `trackz-viz`
   but not `trackzilla`; `Jim Smith` matches `Re: Jim Smith's PR`), and `/.../` is a regular expression (Go syntax,
   ignoring case), e.g. `/inv-\d+/`; flags may follow the closing slash (`i`, `m`, `s`, `U`), e.g. `/^todo/m`. In the
   pattern fields Enter starts a new line; Ctrl+Enter (Cmd+Enter on macOS) applies. The filter applies to every view

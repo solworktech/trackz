@@ -241,7 +241,8 @@ func (s *Service) records(ctx context.Context, r Range, f Filter) ([]store.Recor
 	if err != nil {
 		return nil, err
 	}
-	return f.apply(clipStatuses(recs), s.titleFunc())
+	title := s.titleFunc()
+	return f.apply(clipStatuses(recs), title, s.groupFunc(title))
 }
 
 // Apps returns the applications with focus time in r (ignoring any

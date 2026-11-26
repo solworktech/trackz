@@ -38,6 +38,7 @@ type drill struct {
 	table     tableView
 	pie       pieChart
 	bars      barChart
+	picker    groupPicker // a window's task group
 }
 
 // Views of a task group's drill-down (UI.groupView).
@@ -230,6 +231,11 @@ func (u *UI) layoutDrill(gtx C, d *drill) D {
 					layout.Rigid(func(gtx C) D { return labelThenThrobber(gtx, u.th, info, loading) }),
 				)
 			}),
+		}
+		if it := d.point.Item; it.Process != "" {
+			children = append(children, layout.Rigid(func(gtx C) D {
+				return layout.Inset{Left: 12}.Layout(gtx, func(gtx C) D { return u.layoutGroupPicker(gtx, &d.picker, it) })
+			}))
 		}
 		if d.group {
 			for _, v := range groupViews {

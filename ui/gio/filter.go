@@ -36,12 +36,19 @@ type filterDialog struct {
 	scrim, panel         int
 	excludedWhenOpened   []string
 	appsFor              report.Range
+	groups               []filterGroup // the task groups, then Ungrouped
+	groupList            widget.List
 	focus                bool // focus the include editor on the next frame
 }
 
 type filterApp struct {
 	report.Point
 	shown widget.Bool // checked: included
+}
+
+type filterGroup struct {
+	name  string // "" for Ungrouped
+	shown widget.Bool
 }
 
 func (u *UI) openFilterDialog() {
@@ -54,6 +61,14 @@ func (u *UI) openFilterDialog() {
 		e.ed.SetCaret(e.ed.Len(), e.ed.Len())
 	}
 	d.err = nil
+	d.groups = nil
+	if names := u.svc.GroupNames(); len(names) > 0 {
+		for _, n := range append(names, "") {
+			g := filterGroup{name: n}
+			g.shown.Value = !u.filter.ExcludesGroup(n)
+			d.groups = append(d.groups, g)
+		}
+	}
 	excluded := slices.Clone(u.filter.ExcludeApps)
 	d.excludedWhenOpened = excluded
 	d.open, d.focus = true, true
@@ -106,6 +121,15 @@ func (u *UI) applyFilterDialog() {
 	}
 	if d.err = f.Validate(); d.err != nil {
 		return // shown in the dialog
+	}
+	for i := range d.groups {
+		switch g := &d.groups[i]; {
+		case g.shown.Value:
+		case g.name == "":
+			f.ExcludeUngrouped = true
+		default:
+			f.ExcludeGroups = append(f.ExcludeGroups, g.name)
+		}
 	}
 	u.mu.Lock()
 	if d.loading || d.loadErr != nil {
@@ -238,7 +262,11 @@ func (u *UI) filterDialogBody(gtx C) D {
 		}),
 		layout.Rigid(layout.Spacer{Height: 6}.Layout),
 		layout.Rigid(func(gtx C) D {
-			gtx.Constraints.Max.Y = min(gtx.Constraints.Max.Y, gtx.Dp(300))
+			appsH := unit.Dp(300)
+			if len(d.groups) > 0 {
+				appsH = 200 // room for the task groups
+			}
+			gtx.Constraints.Max.Y = min(gtx.Constraints.Max.Y, gtx.Dp(appsH))
 			gtx.Constraints.Min.X = gtx.Constraints.Max.X
 			return bordered(gtx, func(gtx C) D {
 				switch {
@@ -260,6 +288,7 @@ func (u *UI) filterDialogBody(gtx C) D {
 				})
 			})
 		}),
+		layout.Rigid(u.filterGroups),
 		layout.Rigid(layout.Spacer{Height: 14}.Layout),
 		layout.Rigid(func(gtx C) D {
 			return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
@@ -303,6 +332,51 @@ func (u *UI) patternFieldH(gtx C, label string, ed *widget.Editor, hint string, 
 					e := material.Editor(u.th, ed, hint)
 					e.TextSize = 14
 					return editorField(gtx, e)
+				})
+			})
+		}),
+	)
+}
+
+// filterGroups lists the task groups and Ungrouped, to untick to exclude
+// (nothing when there are no groups).
+func (u *UI) filterGroups(gtx C) D {
+	d := &u.filterDlg
+	if len(d.groups) == 0 {
+		return D{}
+	}
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		layout.Rigid(func(gtx C) D {
+			l := material.Body2(u.th, "Task groups (untick to exclude)")
+			l.Color = cs.muted
+			return layout.Inset{Top: 14, Bottom: 6}.Layout(gtx, l.Layout)
+		}),
+		layout.Rigid(func(gtx C) D {
+			gtx.Constraints.Max.Y = min(gtx.Constraints.Max.Y, gtx.Dp(120))
+			gtx.Constraints.Min.X = gtx.Constraints.Max.X
+			return bordered(gtx, func(gtx C) D {
+				d.groupList.Axis = layout.Vertical
+				return material.List(u.th, &d.groupList).Layout(gtx, len(d.groups), func(gtx C, i int) D {
+					g := &d.groups[i]
+					name := g.name
+					if name == "" {
+						name = report.UngroupedLabel
+					}
+					return g.shown.Layout(gtx, func(gtx C) D {
+						return layout.Inset{Left: 8, Right: 8, Top: 4, Bottom: 4}.Layout(gtx, func(gtx C) D {
+							return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+								layout.Rigid(func(gtx C) D { return checkBox(gtx, g.shown.Value) }),
+								layout.Rigid(layout.Spacer{Width: 8}.Layout),
+								layout.Flexed(1, func(gtx C) D {
+									col := cs.fg
+									if !g.shown.Value {
+										col = cs.muted
+									}
+									return truncLabel(gtx, u.th, 14, col, name)
+								}),
+							)
+						})
+					})
 				})
 			})
 		}),
