@@ -12,8 +12,9 @@ set -euo pipefail
 APP=$1
 OUT=$2
 mkdir -p "$OUT/shots" "$OUT/files"
-# Where trackz and trackz-viz put the database by default on macOS.
-DB="$HOME/Library/Application Support/trackz/trackz.db"
+# Where trackz and trackz-viz keep their config and database on macOS.
+CONF_DIR="$HOME/Library/Application Support/trackz"
+DB="$CONF_DIR/trackz.db"
 AGENT=org.solworktech.trackz
 PLIST="$HOME/Library/LaunchAgents/$AGENT.plist"
 DOMAIN="gui/$(id -u)"
@@ -31,6 +32,11 @@ focus() { # seconds name open-args...: brings an app forward, waits, screenshots
 	sleep "$wait"
 	shot "$name"
 }
+
+# Each app has focus for seconds only, under the viewer's default minimum
+# (min_duration_seconds, 120): show every entry.
+mkdir -p "$CONF_DIR"
+printf '{\n  "min_duration_seconds": 0\n}\n' >"$CONF_DIR/config.json"
 
 # Documents with known titles.
 printf 'Alpha notes for the trackz smoke test.\n' >"$OUT/files/notes-alpha.txt"
@@ -90,6 +96,7 @@ wait "$rec" 2>/dev/null || true
 
 cp /tmp/trackz.log "$OUT/trackz.log" 2>/dev/null || echo "no /tmp/trackz.log"
 cp "$DB" "$OUT/trackz.db"
+cp "$CONF_DIR/config.json" "$OUT/config.json"
 sqlite3 -header -column "$DB" "SELECT id, process_name, app_name, window_name,
 	datetime(focus_start_time, 'unixepoch') AS start, focus_end_time - focus_start_time AS seconds
 	FROM trackz ORDER BY id" >"$OUT/records.txt"
