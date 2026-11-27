@@ -1,7 +1,7 @@
 #!/bin/bash
 # Installs Trackz from a disk image as a user would: mounts it, copies
 # Trackz.app to /Applications, unmounts it, and checks the copy (bundle,
-# signature, universal binaries, version).
+# signature, architecture, version).
 #   install-dmg.sh Trackz-x.y.z.dmg
 set -euo pipefail
 

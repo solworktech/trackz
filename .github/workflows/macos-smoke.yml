@@ -28,10 +28,12 @@ jobs:
         with:
           go-version-file: go.mod
 
+      # The runner's own architecture's (the release has arm64 and amd64).
       - name: Disk image
         run: |
           version=$(git describe --tags --always --dirty)
-          packaging/macos/make-dmg.sh "$version" "$RUNNER_TEMP/dmg"
+          arch=$(go env GOARCH)
+          packaging/macos/make-dmg.sh "$version" "$RUNNER_TEMP/dmg" "$arch"
 
       - name: Install
         run: .github/macos-smoke/install-dmg.sh "$RUNNER_TEMP"/dmg/Trackz-*.dmg

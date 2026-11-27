@@ -1,8 +1,8 @@
 ---
-# macOS release: tar.gz archives for amd64 and arm64 (the Homebrew formula
-# is commented out for now). Runs on macOS (cgo with the AppKit frameworks),
-# after the Linux release (.goreleaser.yaml) has created the GitHub release;
-# see .github/workflows/release.yml.
+# macOS release: tar.gz archives and disk images (Trackz.app) for amd64 and
+# arm64 (the Homebrew formula is commented out for now). Runs on macOS (cgo
+# with the AppKit frameworks), after the Linux release (.goreleaser.yaml) has
+# created the GitHub release; see .github/workflows/release.yml.
 #
 # Try it locally with:
 #   goreleaser release --snapshot --clean -f .goreleaser.darwin.yaml
@@ -12,6 +12,13 @@ project_name: trackz
 before:
   hooks:
     - go mod tidy
+    # The disk images, one per architecture of the builds below: GoReleaser
+    # makes app bundles and disk images only in its Pro edition, so
+    # make-dmg.sh does (building the binaries itself, with the same flags),
+    # and release.extra_files adds them. Not in dist: --clean empties it.
+    # v{{ .Version }} is the tag, except in snapshots, where it names the
+    # images like the snapshot's archives.
+    - packaging/macos/make-dmg.sh v{{ .Version }} dist-dmg arm64 amd64
 
 builds:
   - &build
@@ -48,13 +55,18 @@ archives:
 checksum:
   # Not checksums.txt: the Linux release uploads that one.
   name_template: checksums-darwin.txt
+  extra_files:
+    - glob: dist-dmg/Trackz-{{ .Version }}-*.dmg
 
 changelog:
   disable: true
 
 release:
-  # Add the archives to the release the Linux job made; keep its notes.
+  # Add the archives and disk images to the release the Linux job made;
+  # keep its notes.
   mode: keep-existing
+  extra_files:
+    - glob: dist-dmg/Trackz-{{ .Version }}-*.dmg
 
 # The Homebrew formula, for later (needs the solworktech/homebrew-trackz
 # repository, and GH_TOKEN in release.yml).

@@ -1,5 +1,6 @@
 /bin/
 /dist/
+/dist-dmg/
 go.work
 go.work.sum
 *.db

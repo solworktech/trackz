@@ -89,8 +89,8 @@ Each [release](https://github.com/solworktech/trackz/releases) has:
 - **Arch Linux** (`.pkg.tar.zst`): the binaries, the desktop entry, icons and the unit; as usual on Arch, nothing
   starts by itself: `systemctl --user enable --now trackz`, or the autostart entry (see [Starting
   automatically](#starting-automatically)).
-- **macOS**: a disk image, `Trackz-<version>.dmg`, with `Trackz.app` (universal: Apple silicon and Intel): drag it to
-  Applications; opening it opens the viewer, and `Trackz.app/Contents/MacOS/trackz` is the recorder. Its *Read me*
+- **macOS**: disk images with `Trackz.app`, `Trackz-<version>-arm64.dmg` for Apple silicon and
+  `Trackz-<version>-x86_64.dmg` for Intel Macs: drag it to Applications; opening it opens the viewer, and `Trackz.app/Contents/MacOS/trackz` is the recorder. Its *Read me*
   says how to start the recorder at login (see [Starting automatically](#starting-automatically)). The app is signed
   ad hoc, not notarized: the first time, right-click it and choose *Open*. Also `tar.gz` archives of the binaries.
 - **Windows**: the MSI installers (see [Windows installer](#windows-installer)).
@@ -243,8 +243,8 @@ cross-compiled from one: [.goreleaser.yaml](./.goreleaser.yaml) on Ubuntu (amd64
 an arm64 sysroot made in a container) makes the release with the changelog, the Linux archives and the deb, rpm and
 Arch packages;
 [.goreleaser.darwin.yaml](./.goreleaser.darwin.yaml) on macOS then adds the macOS archives (its Homebrew formula is
-commented out for now), and [packaging/macos/make-dmg.sh](./packaging/macos/make-dmg.sh) the disk image (GoReleaser
-makes disk images and app bundles only in its Pro edition). The macOS smoke test workflow (run by hand) builds the
+commented out for now) and, with [packaging/macos/make-dmg.sh](./packaging/macos/make-dmg.sh) (GoReleaser makes
+disk images and app bundles only in its Pro edition), the disk images. The macOS smoke test workflow (run by hand) builds the
 disk image, installs from it and records a session on a GitHub macOS runner. The Windows MSIs come from the windows-installer workflow. The deb and rpm scripts are in
 [packaging/linux](./packaging/linux). There are no BSD binaries: build from source there.
 

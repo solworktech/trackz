@@ -1,5 +1,5 @@
-Trackz @VERSION@ for macOS
-=========================
+Trackz @VERSION@ for macOS (@ARCH@)
+===================================
 
 1. Drag Trackz to Applications.
 

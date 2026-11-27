@@ -1,8 +1,7 @@
 ---
 # Release for a version tag (v1.2.3): Linux archives, deb, rpm and Arch
-# packages (.goreleaser.yaml), then macOS archives (.goreleaser.darwin.yaml)
-# and a disk image (packaging/macos/make-dmg.sh). The Windows MSIs come from
-# windows-installer.yml.
+# packages (.goreleaser.yaml), then macOS archives and disk images
+# (.goreleaser.darwin.yaml). The Windows MSIs come from windows-installer.yml.
 #
 # The release uses the workflow's own token. For the Homebrew formula (not
 # enabled yet), add a GH_TOKEN secret that can push to
@@ -108,13 +107,3 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # GH_TOKEN: ${{ secrets.GH_TOKEN }}
-
-      # Trackz.app (universal) in a disk image, with its checksum.
-      - name: Disk image
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ inputs.tag || github.ref_name }}
-        run: |
-          packaging/macos/make-dmg.sh "$TAG" dist-dmg
-          (cd dist-dmg && shasum -a 256 ./*.dmg >checksums-dmg.txt)
-          gh release upload "$TAG" dist-dmg/*.dmg dist-dmg/checksums-dmg.txt --clobber
